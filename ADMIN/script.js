@@ -180,6 +180,10 @@ async function navigateTo(view){
   if (meta.action){ actionBtn.style.display = 'inline-flex'; actionBtn.textContent = '+ ' + meta.action.replace(/^Add /,'').replace(/^Record /,''); }
   else { actionBtn.style.display = 'none'; }
   await renderView(view);
+
+  // Auto-open the create modal for Bills and Payments so admins land directly on the creation form
+  if (view === 'bills') openBillModal();
+  else if (view === 'payments') openPaymentModal();
 }
 
 document.getElementById('refreshBtn').addEventListener('click', () => refreshCurrentView(true));
