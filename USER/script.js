@@ -89,6 +89,12 @@ function escapeHtml(str){
    FORMATTERS
    ================================================================ */
 const currency = (n) => '₹' + Number(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dateFmt = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+};
 function daysLeftHtml(endIso){
   if (!endIso) return '<span style="color:var(--muted);">—</span>';
   const end = new Date(endIso);
