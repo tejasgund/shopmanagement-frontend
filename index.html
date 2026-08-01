@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Ledger — Shop &amp; Tenant Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="root.css">
+  <script>
+    // If already signed in, skip the login screen and go straight to the right app.
+    (function () {
+      try {
+        var token = localStorage.getItem('tms_token');
+        var role  = localStorage.getItem('tms_role');
+        if (token && role) {
+          window.location.replace(role === 'admin' ? './ADMIN/index.html' : './USER/index.html');
+        }
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+</head>
+<body>
+
+<!-- ============================================================
+     LOGIN SCREEN
+     ============================================================ -->
+<div class="login-wrap" id="loginScreen">
+  <div class="login-card">
+    <div class="login-mark">
+      <div class="stamp-mark">Hi</div>
+      <div class="wordmark">Sahyadri Buisness Park<span>.</span></div>
+    </div>
+    <h1>Sign in</h1>
+    <p class="login-sub">Manage complexes, shops, tenants and bills.</p>
+
+    <div class="login-error" id="loginError"></div>
+
+    <form id="loginForm" autocomplete="on">
+      <div class="field">
+        <label for="loginMobile">Mobile number</label>
+        <input type="tel" id="loginMobile" name="mobile" placeholder="9999999999" autocomplete="username" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="loginPassword">Password</label>
+        <div class="pw-row">
+          <input type="password" id="loginPassword" name="password" placeholder="••••••••" autocomplete="current-password" required>
+          <button type="button" class="pw-toggle" id="pwToggle">SHOW</button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+        <span id="loginBtnText">Sign in</span>
+      </button>
+    </form>
+  <div class="api-base-note">
+    <span>Contact</span>
+    <code>
+    Tejas Gund - +91 8177809890
+  </code>
+</div>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   CONFIG — set your backend URL here
+   ================================================================ */
+const API_BASE_URL = ""; // relative — same origin as this page; Apache proxies /api to the backend
+
+/* ================================================================
+   MINIMAL API HELPER (login only)
+   ================================================================ */
+class ApiError extends Error {
+  constructor(message, status){ super(message); this.status = status; }
+}
+async function api(path, { method = 'GET', body = null } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method, headers, body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    throw new ApiError(`Can't reach the server at ${API_BASE_URL}. Check the API_BASE_URL value and that the backend is running.`, 0);
+  }
+  let data = null;
+  const text = await res.text();
+  if (text) { try { data = JSON.parse(text); } catch { data = null; } }
+  if (!res.ok) {
+    let msg = `Request failed (${res.status})`;
+    if (data) {
+      if (typeof data.detail === 'string') msg = data.detail;
+      else if (Array.isArray(data.detail)) msg = data.detail.map(d => d.msg).join(', ');
+    }
+    throw new ApiError(msg, res.status);
+  }
+  return data;
+}
+
+/* ================================================================
+   LOGIN
+   ================================================================ */
+const loginForm = document.getElementById('loginForm');
+const loginError = document.getElementById('loginError');
+const loginBtn = document.getElementById('loginBtn');
+const loginBtnText = document.getElementById('loginBtnText');
+
+// Show a note if we were redirected here because the session expired.
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('expired') === '1') {
+    loginError.textContent = 'Your session expired. Please sign in again.';
+    loginError.classList.add('show');
+  }
+})();
+
+document.getElementById('pwToggle').addEventListener('click', () => {
+  const pw = document.getElementById('loginPassword');
+  const btn = document.getElementById('pwToggle');
+  if (pw.type === 'password'){ pw.type = 'text'; btn.textContent = 'HIDE'; }
+  else { pw.type = 'password'; btn.textContent = 'SHOW'; }
+});
+
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  loginError.classList.remove('show');
+  const mobile = document.getElementById('loginMobile').value.trim();
+  const password = document.getElementById('loginPassword').value;
+
+  loginBtn.disabled = true;
+  loginBtnText.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    const data = await api('/api/login', { method:'POST', body:{ mobile, password } });
+    localStorage.setItem('tms_token', data.token);
+    localStorage.setItem('tms_role', data.role);
+    window.location.replace(data.role === 'admin' ? './ADMIN/index.html' : './USER/index.html');
+  } catch (err) {
+    loginError.textContent = err.message || 'Sign in failed. Check your credentials.';
+    loginError.classList.add('show');
+    loginBtn.disabled = false;
+    loginBtnText.textContent = 'Sign in';
+  }
+});
+</script>
+</body>
+</html>
