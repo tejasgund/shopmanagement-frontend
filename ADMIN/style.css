@@ -570,3 +570,82 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .year-btn{ padding:7px 14px; border-radius:999px; border:1.5px solid var(--line); background:var(--paper-raised); font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; transition:all .12s; }
 .year-btn.active{ background:var(--ink); color:#fff; border-color:var(--ink); }
 .year-btn:hover:not(.active){ border-color:var(--ink); color:var(--ink); }
+
+
+/* ================================================================
+   COMPLEX CARDS (Shops section: grouped-by-complex overview)
+   ================================================================ */
+.complex-cards-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+  gap:14px;
+  margin-top:4px;
+}
+.complex-card{
+  background:var(--paper-raised);
+  border:1.5px solid var(--line);
+  border-radius:var(--radius);
+  padding:18px 20px;
+  text-align:left;
+  cursor:pointer;
+  transition:border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+  display:flex; flex-direction:column; gap:14px;
+  font-family:inherit; color:inherit;
+}
+.complex-card:hover{
+  border-color:var(--green);
+  box-shadow:var(--shadow-sm);
+  transform:translateY(-1px);
+}
+.complex-card:active{ transform:translateY(0); }
+.complex-card-title{
+  font-family:var(--font-display);
+  font-weight:700; font-size:17px;
+  color:var(--ink);
+}
+.complex-card-stats{
+  display:grid;
+  grid-template-columns:repeat(3, 1fr);
+  gap:8px;
+}
+.complex-card-stats .ccs{
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  padding:8px 6px;
+  text-align:center;
+  background:var(--paper);
+}
+.complex-card-stats .ccs-n{
+  font-family:var(--font-mono);
+  font-weight:700; font-size:18px;
+  color:var(--ink);
+}
+.complex-card-stats .ccs-l{
+  font-size:10.5px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  color:var(--muted);
+  margin-top:2px;
+  font-weight:600;
+}
+.complex-card-progress{ display:flex; flex-direction:column; gap:4px; }
+.complex-card-progress .ccp-track{
+  height:8px;
+  background:var(--line);
+  border-radius:100px;
+  overflow:hidden;
+}
+.complex-card-progress .ccp-fill{
+  height:100%;
+  background:linear-gradient(90deg, var(--green), var(--green-deep));
+  border-radius:100px;
+  transition:width .3s ease;
+}
+.complex-card-progress .ccp-label{
+  font-size:11.5px;
+  color:var(--muted);
+  font-weight:600;
+  text-align:right;
+}
+.complex-card-orphan{ border-style:dashed; }
+.complex-card-orphan .complex-card-title{ color:var(--rust); }
