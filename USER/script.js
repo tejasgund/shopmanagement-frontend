@@ -868,7 +868,7 @@ function renderMonthSummary(bills, payments){
     const mBills = months[key].bills;
     const mPays = months[key].payments;
     const rent = mBills.reduce((s,b)=>s+Number(b.amount||0),0);
-    const paid = mBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    const paid = mPays.reduce((s,p)=>s+Number(p.amount||0),0);
     const pending = mBills.reduce((s,b)=>s+Number(b.pending_amount||0),0);
     return `
     <div class="month-row">

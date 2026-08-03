@@ -34,6 +34,7 @@ from db_config import SessionLocal, get_db
 from log import get_logger, log_request_middleware
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import extract
+from scheduler_config import load_scheduler_config
 
 APP_TIMEZONE = "Asia/Kolkata"
 
@@ -1390,19 +1391,45 @@ scheduler = BackgroundScheduler(timezone=APP_TIMEZONE)
 
 @app.on_event("startup")
 def _start_rent_bill_scheduler():
+    """Reads conf/scheduler.conf and (if enabled) schedules the nightly rent
+    bill job accordingly. See scheduler_config.py for defaults/fallback
+    behavior if the conf file is missing or invalid."""
+    config = load_scheduler_config()
+
+    if not config["scheduler_enabled"]:
+        logger.info("Scheduler disabled via conf/scheduler.conf ([scheduler] enabled = false) — no jobs will run")
+        return
+
+    job = config["rent_bill_generation"]
+    if not job["enabled"]:
+        logger.info("Rent bill generation job disabled via conf/scheduler.conf — skipping")
+        return
+
     scheduler.add_job(
         _run_scheduled_rent_bill_generation,
-        CronTrigger(hour=2, minute=0, timezone=APP_TIMEZONE),
+        CronTrigger(
+            minute=job["minute"],
+            hour=job["hour"],
+            day=job["day"],
+            month=job["month"],
+            day_of_week=job["day_of_week"],
+            timezone=job["timezone"],
+        ),
         id="generate_rent_bills",
         replace_existing=True,
+        misfire_grace_time=job["misfire_grace_time"],
     )
     scheduler.start()
-    logger.info("Rent bill generation scheduler started (daily 02:00 %s)", APP_TIMEZONE)
+    logger.info(
+        "Rent bill generation scheduler started (cron minute=%s hour=%s day=%s month=%s day_of_week=%s %s)",
+        job["minute"], job["hour"], job["day"], job["month"], job["day_of_week"], job["timezone"],
+    )
 
 
 @app.on_event("shutdown")
 def _stop_rent_bill_scheduler():
-    scheduler.shutdown(wait=False)
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 
 
 @app.post("/api/bill", response_model=BillResponse, status_code=201, tags=["Bill"])
@@ -3600,13 +3627,25 @@ def _get_monthly_ledger_data(user_id: int, year: int, db: Session) -> dict:
         extract('year', Bill.bill_date) == year
     ).all()
 
+    # Payments are grouped by the month money actually changed hands (payment_date),
+    # not by the month of the bill they were applied against — a payment made in
+    # August against a July bill must show up under August so the tenant can see
+    # how much they actually paid in that month.
+    payments = db.query(Payment).join(Bill, Bill.id == Payment.bill_id).filter(
+        Bill.user_id == user_id,
+        extract('year', Payment.payment_date) == year
+    ).all()
+
     monthly_data = {m: {"bills": [], "billed": 0.0, "paid": 0.0, "remaining": 0.0} for m in range(1,13)}
     for bill in bills:
         month = bill.bill_date.month
         monthly_data[month]["bills"].append(bill)
         monthly_data[month]["billed"] += _decimal_to_float(bill.amount)
-        monthly_data[month]["paid"] += _decimal_to_float(bill.paid_amount)
         monthly_data[month]["remaining"] += _decimal_to_float(bill.pending_amount)
+
+    for payment in payments:
+        month = payment.payment_date.month
+        monthly_data[month]["paid"] += _decimal_to_float(payment.amount)
 
     monthly_rows = []
     total_billed = total_paid = total_remaining = 0.0
@@ -3622,11 +3661,14 @@ def _get_monthly_ledger_data(user_id: int, year: int, db: Session) -> dict:
         total_remaining += remaining
         total_bills_count += count
 
+        # Status reflects whether that month's bills are settled, based on the
+        # bills' own running balance — independent of which month the payment
+        # landed in (that's what "paid" above is for).
         if count == 0:
-            status = "No bills"
+            status = "Paid" if paid > 0 else "No bills"
         elif remaining == 0:
             status = "Paid"
-        elif paid > 0 and remaining > 0:
+        elif remaining < billed:
             status = "Partial"
         else:
             status = "Pending"
@@ -3652,10 +3694,6 @@ def _get_monthly_ledger_data(user_id: int, year: int, db: Session) -> dict:
         "shop_deposit": _decimal_to_float(s.shop_deposit),
     } for s in shops]
 
-    payments = db.query(Payment).join(Bill, Bill.id == Payment.bill_id).filter(
-        Bill.user_id == user_id,
-        extract('year', Payment.payment_date) == year
-    ).all()
     payment_list = [{
         "id": p.id,
         "amount": _decimal_to_float(p.amount),
