@@ -625,12 +625,15 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .billing-tab-btn.active{ color:var(--ink); border-bottom-color:var(--green); }
 .billing-tab-count{ background:var(--paper-raised); border:1px solid var(--line); border-radius:999px; padding:1px 7px; font-size:11px; font-family:var(--font-mono); }
 
-/* Grouped bill-type / payment-date sections */
-.billing-group{ margin-bottom:18px; }
-.billing-group-header{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; font-weight:700; font-size:13.5px; padding:8px 2px; border-bottom:1px dashed var(--line); margin-bottom:10px; }
-.billing-group-count{ color:var(--muted); font-weight:500; }
+/* Grouped bill-type / payment-date sections (collapsed by default, expand on click) */
+.billing-group-section{ margin-bottom:10px; }
+.billing-group-section .collapsible-header{ flex-wrap:wrap; row-gap:6px; }
+.billing-group-count{ color:var(--muted); font-weight:500; font-size:13px; }
+.billing-group-header-right{ display:flex; align-items:center; gap:14px; }
 .billing-group-totals{ display:flex; gap:14px; font-size:12px; font-weight:500; color:var(--muted); }
 .billing-group-totals strong{ font-weight:700; color:var(--ink); }
+.billing-group-section .collapsible-body{ padding:14px; }
+.billing-group-section .billing-bill-card:last-child{ margin-bottom:0; }
 
 /* Finance page user card */
 .user-finance-card{ background:var(--paper-raised); border:1.5px solid var(--green); border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }

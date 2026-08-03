@@ -1222,15 +1222,19 @@ function billingBillsByTypeHtml(mBills){
     const received = bills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
     const remaining = billed - received;
     return `
-    <div class="billing-group">
-      <div class="billing-group-header">
-        <span>${escapeHtml(type)} <span class="billing-group-count">(${bills.length})</span></span>
-        <span class="billing-group-totals">
-          <span>Billed <strong class="mono">${currency(billed)}</strong></span>
-          <span>Recv <strong class="mono" style="color:var(--green-deep);">${currency(received)}</strong></span>
-          <span>Rem <strong class="mono" style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></span>
-        </span>
+    <div class="collapsible-section billing-group-section">
+      <div class="collapsible-header" onclick="toggleCollapse(this)">
+        <h3>${escapeHtml(type)} <span class="billing-group-count">(${bills.length})</span></h3>
+        <div class="billing-group-header-right">
+          <span class="billing-group-totals">
+            <span>Billed <strong class="mono">${currency(billed)}</strong></span>
+            <span>Recv <strong class="mono" style="color:var(--green-deep);">${currency(received)}</strong></span>
+            <span>Rem <strong class="mono" style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></span>
+          </span>
+          <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
       </div>
+      <div class="collapsible-body">
       ${bills.map(b => `
       <div class="billing-bill-card">
         <div class="billing-bill-head">
@@ -1255,6 +1259,7 @@ function billingBillsByTypeHtml(mBills){
           <button class="btn-icon" data-delete-bill="${b.id}" aria-label="Delete bill">${trashIcon()}</button>
         </div>
       </div>`).join('')}
+      </div>
     </div>`;
   }).join('');
 }
@@ -1266,11 +1271,15 @@ function billingPaymentsByDateHtml(mPayments){
     const pays = mPayments.filter(p=>p.payment_date===dateKey).sort((a,b)=>b.id-a.id);
     const total = pays.reduce((s,p)=>s+Number(p.amount||0),0);
     return `
-    <div class="billing-group">
-      <div class="billing-group-header">
-        <span>${dateFmt(dateKey)} <span class="billing-group-count">(${pays.length})</span></span>
-        <span class="billing-group-totals"><strong class="mono" style="color:var(--green-deep);">${currency(total)}</strong></span>
+    <div class="collapsible-section billing-group-section">
+      <div class="collapsible-header" onclick="toggleCollapse(this)">
+        <h3>${dateFmt(dateKey)} <span class="billing-group-count">(${pays.length})</span></h3>
+        <div class="billing-group-header-right">
+          <span class="billing-group-totals"><strong class="mono" style="color:var(--green-deep);">${currency(total)}</strong></span>
+          <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
       </div>
+      <div class="collapsible-body">
       <div class="billing-payments-list">
         ${pays.map(p => `
         <div class="billing-payment-row">
@@ -1281,6 +1290,7 @@ function billingPaymentsByDateHtml(mPayments){
             <button class="btn-icon" data-delete-payment="${p.id}" aria-label="Delete payment">${trashIcon()}</button>
           </span>
         </div>`).join('')}
+      </div>
       </div>
     </div>`;
   }).join('');
