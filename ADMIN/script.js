@@ -13,6 +13,11 @@ const state = {
   view: 'dashboard',
   cache: { complexes: [], shops: [], users: [], bills: [], payments: [] },
   loaded: { complexes:false, shops:false, users:false, bills:false, payments:false },
+  billing: {
+    filters: { status: [], complexIds: [], typeSet: [], years: [], months: [], search: '' },
+    nav: { complexId: null, userId: null, year: null, month: null },
+    sort: 'newest',
+  },
 };
 // Set by dashboard "at a glance" cards to auto-apply a filter when the Bills view loads next.
 let pendingBillsViewFilter = null;
@@ -158,8 +163,7 @@ const viewMeta = {
   complexes: { title:'Complexes', crumb:'Buildings and properties you manage', action:'Add complex' },
   shops:     { title:'Shops', crumb:'Units across all complexes', action:'Add shop' },
   users:     { title:'Users', crumb:'Admins and tenants', action:'Add user' },
-  bills:     { title:'Bills', crumb:'Charges raised to tenants', action:'Create bills' },
-  payments:  { title:'Payments', crumb:'Payments recorded against bills', action:'Record payment' },
+  billing:   { title:'Bills & Payments', crumb:'Charges and payments, grouped by complex and tenant', action:null },
   finance:   { title:'Tenant View', crumb:'Full tenant dashboard – bills, payments, deposit status', action:null },
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
   reports:   { title:'Reports', crumb:'Occupancy, collections and outstanding dues', action:null },
@@ -181,10 +185,6 @@ async function navigateTo(view){
   if (meta.action){ actionBtn.style.display = 'inline-flex'; actionBtn.textContent = '+ ' + meta.action.replace(/^Add /,'').replace(/^Record /,''); }
   else { actionBtn.style.display = 'none'; }
   await renderView(view);
-
-  // Auto-open the create modal for Bills and Payments so admins land directly on the creation form
-  if (view === 'bills') openBillModal();
-  else if (view === 'payments') openPaymentModal();
 }
 
 document.getElementById('refreshBtn').addEventListener('click', () => refreshCurrentView(true));
@@ -210,8 +210,7 @@ async function renderView(view){
       case 'complexes': content.innerHTML = await complexesView(); attachComplexHandlers(); break;
       case 'shops': content.innerHTML = await shopsView(); attachShopHandlers(); break;
       case 'users': content.innerHTML = await usersView(); attachUserHandlers(); break;
-      case 'bills': content.innerHTML = await billsView(); attachBillHandlers(); break;
-      case 'payments': content.innerHTML = await paymentsView(); attachPaymentHandlers(); break;
+      case 'billing': content.innerHTML = await billingView(); attachBillingHandlers(); break;
       case 'finance': content.innerHTML = await financeView(); attachFinanceHandlers(); break;
       case 'deposits': content.innerHTML = await depositsView(); attachDepositHandlers(); break;
       case 'reports': content.innerHTML = await reportsView(); attachReportsHandlers(); break;
@@ -387,7 +386,7 @@ function attachDashboardHandlers(){
   document.querySelectorAll('.glance-card').forEach(card => {
     card.addEventListener('click', () => {
       pendingBillsViewFilter = card.dataset.glance;
-      navigateTo('bills');
+      navigateTo('billing');
     });
   });
 }
@@ -693,7 +692,7 @@ async function usersView(){
   ${users.length === 0 ? emptyStateHtml('No users yet', 'Add tenants or admins to get started.', emptyIcon()) : `
   <div class="table-wrap">
     <table>
-    <thead><tr><th>Name</th><th>Mobile</th><th>Role</th><th>Status</th><th class="num">Shops</th><th class="num">Monthly Rent</th><th class="num">Total Deposit</th><th>Next End Date</th><th>Days Left</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Mobile</th><th>Role</th><th>Status</th><th class="num">Shops</th><th class="num">Monthly Rent</th><th class="num">Total Deposit</th><th>Next End Date</th><th>Days Left</th><th>Billing</th><th></th></tr></thead>
       <tbody>
               <tbody>
         ${users.map(u => {
@@ -712,6 +711,7 @@ async function usersView(){
             <td class="num">${summary ? currency(summary.totalDeposit) : '—'}</td>
             <td>${dateStr}</td>
             <td>${daysHtml}</td>
+            <td>${u.role === 'tenant' ? (u.rent_bill_date ? `Day ${u.rent_bill_date} · ${u.auto_rent_bill_enabled ? '<span style="color:var(--success); font-weight:600;">Auto ON</span>' : '<span style="color:var(--muted);">Auto OFF</span>'}` : '<span style="color:var(--muted);">Not set</span>') : '—'}</td>
             <td><div class="row-actions">
               ${u.role === 'tenant' ? `<button class="btn-icon" data-financial-summary="${u.id}" data-name="${escapeHtml(u.name)}" aria-label="Financial summary" title="Financial summary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></button>` : ''}
               ${u.role === 'tenant' ? `<button class="btn-icon" data-assign-shops="${u.id}" data-name="${escapeHtml(u.name)}" aria-label="Assign shops">${shopAssignIcon()}</button>` : ''}
@@ -736,142 +736,541 @@ function attachUserHandlers(){
 }
 
 /* ================================================================
-   BILLS VIEW
+   BILLING VIEW (Bills & Payments) — grouped Complex → Tenant → Year → Month,
+   with a multi-select filter bar that switches to a flat filtered list.
    ================================================================ */
-async function billsView(){
-  const [bills, users, shops, complexes] = await Promise.all([
+const BILL_STATUS_OPTIONS = [
+  { value:'pending',   label:'Pending' },
+  { value:'partial',   label:'Partial' },
+  { value:'paid',      label:'Paid' },
+  { value:'overdue',   label:'Overdue' },
+  { value:'cancelled', label:'Cancelled' },
+];
+const MONTH_OPTIONS = Array.from({length:12},(_,i)=>({ value:String(i+1), label:new Date(2000,i).toLocaleString('en-IN',{month:'long'}) }));
+const MONTH_NAMES = MONTH_OPTIONS.map(m=>m.label);
+
+function rupeeIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3c3 0 5-1.5 5-5"/></svg>`; }
+
+function billingEnrichedData(){
+  const bills = state.cache.bills || [];
+  const payments = state.cache.payments || [];
+  const shops = state.cache.shops || [];
+  const users = state.cache.users || [];
+  const complexes = state.cache.complexes || [];
+  const shopById = Object.fromEntries(shops.map(s=>[s.id,s]));
+  const userById = Object.fromEntries(users.map(u=>[u.id,u]));
+  const complexById = Object.fromEntries(complexes.map(c=>[c.id,c]));
+  const paymentsByBill = {};
+  payments.forEach(p => { if (!paymentsByBill[p.bill_id]) paymentsByBill[p.bill_id] = []; paymentsByBill[p.bill_id].push(p); });
+  const now = new Date();
+  const list = bills.map(b => {
+    const shop = shopById[b.shop_id];
+    const user = userById[b.user_id];
+    const cid = shop ? (shop.complex_id ?? null) : null;
+    const d = b.bill_date ? new Date(b.bill_date) : (b.created_at ? new Date(b.created_at) : null);
+    return {
+      ...b,
+      shop, user,
+      complexId: cid,
+      complexName: cid != null ? (complexById[cid]?.name || `#${cid}`) : 'Unassigned',
+      year: d ? d.getFullYear() : null,
+      month: d ? d.getMonth()+1 : null,
+      payments: paymentsByBill[b.id] || [],
+      isOverdue: b.status !== 'paid' && b.status !== 'cancelled' && b.due_date && new Date(b.due_date) < now,
+    };
+  });
+  return { list, shops, users, complexes };
+}
+
+function billingActiveFiltersCount(){
+  const f = state.billing.filters;
+  return f.status.length + f.complexIds.length + f.typeSet.length + f.years.length + f.months.length + (f.search.trim() ? 1 : 0);
+}
+
+function billMatchesFilters(b, f){
+  if (f.status.length && !f.status.some(s => s === 'overdue' ? b.isOverdue : b.status === s)) return false;
+  if (f.complexIds.length && !f.complexIds.includes(String(b.complexId))) return false;
+  if (f.typeSet.length && !f.typeSet.includes(b.bill_type)) return false;
+  if (f.years.length && !f.years.includes(String(b.year))) return false;
+  if (f.months.length && !f.months.includes(String(b.month))) return false;
+  if (f.search.trim()){
+    const q = f.search.trim().toLowerCase();
+    const hay = `${b.user?.name||''} ${b.user?.mobile||''} ${b.shop?.shop_number||''} ${b.complexName} ${b.bill_type} ${b.description||''} #${b.id}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+function msFieldHtml(id, label, options, selected){
+  const sel = new Set((selected||[]).map(String));
+  let summary;
+  if (sel.size === 0) summary = 'All';
+  else if (sel.size === 1) summary = options.find(o=>String(o.value)===[...sel][0])?.label || [...sel][0];
+  else summary = `${sel.size} selected`;
+  return `
+  <div class="field ms-field">
+    <label>${escapeHtml(label)}</label>
+    <button type="button" class="ms-btn" id="${id}Btn" data-ms="${id}">
+      <span>${escapeHtml(summary)}</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="ms-panel" id="${id}Panel">
+      ${options.length===0 ? `<div class="ms-empty">No options</div>` :
+        `<div class="checkbox-list" style="border:none; padding:2px; max-height:230px;">
+          ${options.map(o => `<label class="checkbox-row"><input type="checkbox" class="ms-check" data-ms="${id}" value="${escapeHtml(String(o.value))}" ${sel.has(String(o.value))?'checked':''}> ${escapeHtml(o.label)}</label>`).join('')}
+        </div>`}
+    </div>
+  </div>`;
+}
+
+function initMsFields(ids, onChange){
+  ids.forEach(id => {
+    const btn = document.getElementById(id+'Btn');
+    const panel = document.getElementById(id+'Panel');
+    if (!btn || !panel) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = panel.classList.contains('open');
+      document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+      if (!isOpen) panel.classList.add('open');
+    });
+    panel.addEventListener('click', (e) => e.stopPropagation());
+    panel.querySelectorAll('.ms-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const values = Array.from(panel.querySelectorAll('.ms-check:checked')).map(c=>c.value);
+        const optLabelMap = {};
+        panel.querySelectorAll('.ms-check').forEach(c => { optLabelMap[c.value] = c.closest('.checkbox-row').textContent.trim(); });
+        const summaryEl = btn.querySelector('span');
+        if (values.length === 0) summaryEl.textContent = 'All';
+        else if (values.length === 1) summaryEl.textContent = optLabelMap[values[0]] || values[0];
+        else summaryEl.textContent = `${values.length} selected`;
+        onChange(id, values);
+      });
+    });
+  });
+  if (!window.__msGlobalClickBound){
+    document.addEventListener('click', () => document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open')));
+    window.__msGlobalClickBound = true;
+  }
+}
+
+async function billingView(){
+  await Promise.all([
     ensureLoaded('bills','/api/bill'),
+    ensureLoaded('payments','/api/payment'),
     ensureLoaded('users','/api/user'),
     ensureLoaded('shops','/api/shop'),
     ensureLoaded('complexes','/api/complex'),
   ]);
-  const userName = (id) => users.find(u=>u.id===id)?.name || `#${id}`;
-  const userMobile = (id) => users.find(u=>u.id===id)?.mobile || '';
-  const shopNum = (id) => shops.find(s=>s.id===id)?.shop_number || `#${id}`;
-  const shopComplexId = (id) => shops.find(s=>s.id===id)?.complex_id;
-  const complexName = (id) => complexes.find(c=>c.id===id)?.name || '';
-  updatePendingBadge(bills.filter(b=>b.status!=='paid').length);
+  updatePendingBadge(state.cache.bills.filter(b=>b.status!=='paid').length);
 
-  const tenants = users.filter(u=>u.role==='tenant');
+  // Apply any filter requested from the dashboard's "at a glance" cards
+  if (pendingBillsViewFilter) {
+    const g = pendingBillsViewFilter;
+    const f = state.billing.filters;
+    const now = new Date();
+    if (g === 'overdue') f.status = ['overdue'];
+    else if (g === 'partial') f.status = ['partial'];
+    else if (g === 'paid') f.status = ['paid'];
+    else if (g === 'outstanding') f.status = ['pending','partial'];
+    else if (g === 'due-this-month') { f.status = ['pending','partial']; f.years = [String(now.getFullYear())]; f.months = [String(now.getMonth()+1)]; }
+    pendingBillsViewFilter = null;
+  }
+
+  const { list: allBills, complexes } = billingEnrichedData();
+  const billTypes = [...new Set(allBills.map(b=>b.bill_type).filter(Boolean))].sort();
+  const years = [...new Set(allBills.map(b=>b.year).filter(Boolean))].sort((a,b)=>b-a);
+  const complexOptions = [
+    ...complexes.map(c=>({ value:String(c.id), label:c.name })),
+    ...(allBills.some(b=>b.complexId==null) ? [{ value:'null', label:'Unassigned' }] : []),
+  ];
+
   return `
-  <div class="filter-bar">
+  <div class="filter-bar" id="billingFilterBar">
     <div class="field search-full">
       <label>Search</label>
-      <input class="search-input" id="billSearch" placeholder="Tenant name, shop #, complex, bill #…" style="max-width:100%; min-width:0; width:100%;">
+      <input class="search-input" id="bfSearch" placeholder="Tenant name, shop #, complex, bill #…" value="${escapeHtml(state.billing.filters.search)}" style="max-width:100%; min-width:0; width:100%;">
     </div>
-    <div class="field">
-      <label>Complex</label>
-      <select id="billFilterComplex">
-        <option value="">All complexes</option>
-        ${complexes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Tenant</label>
-      <select id="billFilterUser">
-        <option value="">All tenants</option>
-        ${tenants.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Status</label>
-      <select id="billFilterStatus">
-        <option value="">All statuses</option>
-        <option value="pending">Pending</option>
-        <option value="partial">Partial</option>
-        <option value="paid">Paid</option>
-        <option value="overdue">Overdue</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>Type</label>
-      <select id="billFilterType">
-        <option value="">All types</option>
-        ${[...new Set(bills.map(b=>b.bill_type).filter(Boolean))].map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Month</label>
-      <select id="billFilterMonth">
-        <option value="">Any month</option>
-        ${Array.from({length:12},(_,i)=>`<option value="${i+1}">${new Date(2000,i).toLocaleString('en-IN',{month:'long'})}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Year</label>
-      <input id="billFilterYear" type="number" min="2020" max="2099" placeholder="Year" style="width:90px;">
-    </div>
+    ${msFieldHtml('bfStatus','Status', BILL_STATUS_OPTIONS, state.billing.filters.status)}
+    ${msFieldHtml('bfComplex','Complex', complexOptions, state.billing.filters.complexIds)}
+    ${msFieldHtml('bfType','Type', billTypes.map(t=>({value:t,label:t})), state.billing.filters.typeSet)}
+    ${msFieldHtml('bfYear','Year', years.map(y=>({value:String(y),label:String(y)})), state.billing.filters.years)}
+    ${msFieldHtml('bfMonth','Month', MONTH_OPTIONS, state.billing.filters.months)}
     <div class="field">
       <label>Sort</label>
-      <select id="billSort" class="sort-select">
+      <select id="bfSort" class="sort-select">
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
-        <option value="due-asc">Due date ↑</option>
-        <option value="due-desc">Due date ↓</option>
         <option value="amount-high">Highest amount</option>
         <option value="amount-low">Lowest amount</option>
         <option value="pending-first">Pending first</option>
         <option value="tenant">Tenant A-Z</option>
-        <option value="bill-date-asc">Bill Date ↑</option>
-        <option value="bill-date-desc">Bill Date ↓</option>
-        <option value="created-at-asc">Created At ↑</option>
-        <option value="created-at-desc">Created At ↓</option>
       </select>
     </div>
-    <button class="btn btn-ghost filter-clear-btn" id="billClearFilters">Clear filters</button>
-    <button class="btn btn-ghost" id="generateRentBillsBtn" style="margin-left:auto;">⟳ Generate rent bills…</button>
-    <span class="filter-count" id="billCount"></span>
+    <button class="btn btn-ghost filter-clear-btn" id="bfClear">Clear filters</button>
+    <span class="filter-count" id="bfCount"></span>
   </div>
-  ${bills.length === 0 ? emptyStateHtml('No bills yet', 'Pick a tenant and create bills for one or more of their shops.', emptyIcon()) : `
+  <div class="billing-toolbar">
+    <button class="btn btn-primary btn-sm" id="bfAddBill">+ Add bill</button>
+    <button class="btn btn-ghost btn-sm" id="bfRecordPayment">Record payment</button>
+    <button class="btn btn-ghost btn-sm" id="bfGenerateRent">⟳ Generate rent bills…</button>
+  </div>
+  <div id="billingResults"></div>
+  `;
+}
+
+function attachBillingHandlers(){
+  document.getElementById('bfSort').value = state.billing.sort;
+
+  initMsFields(['bfStatus','bfComplex','bfType','bfYear','bfMonth'], (id, values) => {
+    const key = { bfStatus:'status', bfComplex:'complexIds', bfType:'typeSet', bfYear:'years', bfMonth:'months' }[id];
+    state.billing.filters[key] = values;
+    renderBillingResults();
+  });
+
+  let searchTimer;
+  document.getElementById('bfSearch').addEventListener('input', (e) => {
+    clearTimeout(searchTimer);
+    const val = e.target.value;
+    searchTimer = setTimeout(() => { state.billing.filters.search = val; renderBillingResults(); }, 250);
+  });
+
+  document.getElementById('bfSort').addEventListener('change', (e) => {
+    state.billing.sort = e.target.value;
+    renderBillingResults();
+  });
+
+  document.getElementById('bfClear').addEventListener('click', () => {
+    state.billing.filters = { status:[], complexIds:[], typeSet:[], years:[], months:[], search:'' };
+    renderView('billing');
+  });
+
+  document.getElementById('bfAddBill').addEventListener('click', () => openBillModal(state.billing.nav.userId));
+  document.getElementById('bfRecordPayment').addEventListener('click', () => {
+    if (state.billing.nav.userId){
+      renderPaymentForm({ preselectedComplexId: state.billing.nav.complexId==='null'?null:Number(state.billing.nav.complexId), preselectedUserId: Number(state.billing.nav.userId) });
+    } else {
+      openPaymentModal();
+    }
+  });
+  document.getElementById('bfGenerateRent').addEventListener('click', openGenerateRentBillsModal);
+
+  renderBillingResults();
+}
+
+function renderBillingResults(){
+  const container = document.getElementById('billingResults');
+  if (!container) return;
+  const { list: allBills } = billingEnrichedData();
+  const f = state.billing.filters;
+  const activeFilters = billingActiveFiltersCount() > 0;
+  const countEl = document.getElementById('bfCount');
+
+  if (activeFilters){
+    const matched = allBills.filter(b => billMatchesFilters(b, f));
+    if (countEl) countEl.textContent = matched.length + ' record' + (matched.length!==1?'s':'');
+    container.innerHTML = billingFilteredListHtml(matched);
+  } else {
+    if (countEl) countEl.textContent = '';
+    container.innerHTML = billingBrowseHtml(allBills);
+  }
+  attachBillingResultHandlers();
+}
+
+function billingFilteredListHtml(bills){
+  if (bills.length === 0){
+    return emptyStateHtml('No bills match your filters', 'Try adjusting or clearing filters.', emptyIcon());
+  }
+  const sort = state.billing.sort;
+  const sorted = [...bills].sort((a,b) => {
+    if (sort==='newest') return new Date(b.bill_date||b.created_at) - new Date(a.bill_date||a.created_at);
+    if (sort==='oldest') return new Date(a.bill_date||a.created_at) - new Date(b.bill_date||b.created_at);
+    if (sort==='amount-high') return Number(b.amount) - Number(a.amount);
+    if (sort==='amount-low') return Number(a.amount) - Number(b.amount);
+    if (sort==='pending-first') return Number(b.pending_amount) - Number(a.pending_amount);
+    if (sort==='tenant') return (a.user?.name||'').localeCompare(b.user?.name||'');
+    return 0;
+  });
+  return `
   <div class="table-wrap">
-    <table id="billsTable">
-      <thead><tr><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th>Type</th><th>Description</th><th class="num">Amount</th><th class="num">Pending</th><th>Status</th><th>Bill Date</th><th>Created At</th><th>Due</th><th></th></tr></thead>
-      <tbody id="billsTbody">
-        ${bills.map(b => {
-          const cid = shopComplexId(b.shop_id);
-          return `
-          <tr data-bill-id="${b.id}" data-user-id="${b.user_id}" data-shop-id="${b.shop_id}" data-complex-id="${cid||''}"
-              data-status="${b.status}" data-type="${escapeHtml(b.bill_type)}"
-              data-due="${b.due_date||''}" data-amount="${b.amount}" data-pending="${b.pending_amount}"
-              data-date="${b.bill_date||b.created_at||''}"
-              data-bill-date="${b.bill_date||''}"
-              data-created-at="${b.created_at||''}"
-              data-search="${escapeHtml(userName(b.user_id)+' '+userMobile(b.user_id)+' '+shopNum(b.shop_id)+' '+complexName(cid)+' '+b.bill_type+' '+(b.description||'')+' #'+b.id)}">
-            <td class="mono">#${b.id}</td>
-            <td>${escapeHtml(userName(b.user_id))}</td>
-            <td class="mono">${escapeHtml(shopNum(b.shop_id))}</td>
-            <td>${escapeHtml(complexName(cid))}</td>
-            <td>${escapeHtml(b.bill_type)}</td>
-            <td>${escapeHtml(b.description || '—')}</td>
-            <td class="num">${currency(b.amount)}</td>
-            <td class="num">${currency(b.pending_amount)}</td>
-            <td>${stampHtml(b.status)}</td>
-            <td>${dateFmt(b.bill_date)}</td>
-            <td>${dateFmt(b.created_at)}</td>
-            <td>${dateFmt(b.due_date)}</td>
-            <td><div class="row-actions">
-              ${b.status !== 'paid' ? `<button class="btn-icon" data-record-payment="${b.id}" aria-label="Record payment">${rupeeIcon()}</button>` : ''}
-              <button class="btn-icon" data-edit-bill="${b.id}" aria-label="Edit bill">${editIcon()}</button>
-              <button class="btn-icon" data-delete-bill="${b.id}" aria-label="Delete bill">${trashIcon()}</button>
-            </div></td>
-          </tr>`;
-        }).join('')}
+    <table>
+      <thead><tr><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th>Type</th><th class="num">Amount</th><th class="num">Pending</th><th>Status</th><th>Bill Date</th><th>Due</th><th></th></tr></thead>
+      <tbody>
+        ${sorted.map(b => `
+        <tr>
+          <td class="mono">#${b.id}</td>
+          <td>${escapeHtml(b.user?.name || `#${b.user_id}`)}</td>
+          <td class="mono">${escapeHtml(b.shop?.shop_number || `#${b.shop_id}`)}</td>
+          <td>${escapeHtml(b.complexName)}</td>
+          <td>${escapeHtml(b.bill_type)}</td>
+          <td class="num">${currency(b.amount)}</td>
+          <td class="num">${currency(b.pending_amount)}</td>
+          <td>${stampHtml(b.status)}${b.isOverdue ? ' <span class="stamp pending">overdue</span>' : ''}</td>
+          <td>${dateFmt(b.bill_date)}</td>
+          <td>${dateFmt(b.due_date)}</td>
+          <td><div class="row-actions">
+            ${b.status !== 'paid' ? `<button class="btn-icon" data-record-payment="${b.id}" aria-label="Record payment">${rupeeIcon()}</button>` : ''}
+            <button class="btn-icon" data-edit-bill="${b.id}" aria-label="Edit bill">${editIcon()}</button>
+            <button class="btn-icon" data-delete-bill="${b.id}" aria-label="Delete bill">${trashIcon()}</button>
+          </div></td>
+        </tr>`).join('')}
       </tbody>
     </table>
-    <div id="billsEmpty" class="empty-compact" style="display:none;">No bills match your filters.</div>
-  </div>`}`;
+  </div>`;
 }
-function rupeeIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3c3 0 5-1.5 5-5"/></svg>`; }
 
-function attachBillHandlers(){
+function billingBreadcrumbHtml(){
+  const nav = state.billing.nav;
+  const complexes = state.cache.complexes;
+  const users = state.cache.users;
+  const parts = [`<button type="button" class="billing-crumb-seg" data-crumb="complex">All complexes</button>`];
+  if (nav.complexId){
+    const cName = nav.complexId === 'null' ? 'Unassigned' : (complexes.find(c=>String(c.id)===String(nav.complexId))?.name || nav.complexId);
+    parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="tenant">${escapeHtml(cName)}</button>`);
+  }
+  if (nav.userId){
+    const u = users.find(x=>x.id===Number(nav.userId));
+    parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="year">${escapeHtml(u?.name || ('#'+nav.userId))}</button>`);
+  }
+  if (nav.year){
+    parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="month">${nav.year}</button>`);
+  }
+  if (nav.month){
+    parts.push(`<span class="billing-crumb-seg current">${MONTH_NAMES[nav.month-1]}</span>`);
+  }
+  return `<div class="billing-breadcrumb">${parts.join('<span class="billing-crumb-sep">›</span>')}</div>`;
+}
+
+function billingBrowseHtml(allBills){
+  const nav = state.billing.nav;
+  const complexes = state.cache.complexes;
+  const shops = state.cache.shops;
+  const users = state.cache.users;
+  const crumb = billingBreadcrumbHtml();
+
+  if (!nav.complexId){
+    const groups = complexes.map(c => {
+      const cBills = allBills.filter(b => b.complexId === c.id);
+      const tenantIds = new Set(shops.filter(s=>s.complex_id===c.id && s.assigned_to).map(s=>s.assigned_to.id));
+      const pending = cBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+      const collected = cBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+      return { id:c.id, name:c.name, tenantCount:tenantIds.size, pending, collected, billCount:cBills.length };
+    });
+    const unassignedBills = allBills.filter(b => b.complexId == null);
+    if (unassignedBills.length){
+      const tenantIds = new Set(unassignedBills.map(b=>b.user_id));
+      groups.push({
+        id:'null', name:'Unassigned', tenantCount:tenantIds.size,
+        pending: unassignedBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0),
+        collected: unassignedBills.reduce((s,b)=>s+Number(b.paid_amount||0),0),
+        billCount: unassignedBills.length,
+      });
+    }
+    if (groups.length === 0){
+      return crumb + emptyStateHtml('No complexes yet', 'Add a complex and assign shops to start billing.', emptyIcon());
+    }
+    return crumb + `
+    <div class="billing-card-grid">
+      ${groups.map(g => `
+      <button type="button" class="card complex-stat-card billing-pick-card" data-drill-complex="${g.id}">
+        <div class="c-name">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
+          ${escapeHtml(g.name)}
+        </div>
+        <div class="complex-stat-grid">
+          <div class="complex-stat-item"><div class="csi-val">${g.tenantCount}</div><div class="csi-label">Tenants</div></div>
+          <div class="complex-stat-item"><div class="csi-val">${g.billCount}</div><div class="csi-label">Bills</div></div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);">
+          <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Collected</div><div style="font-family:var(--font-mono); font-weight:700; color:var(--green-deep); font-size:14px;">${currency(g.collected)}</div></div>
+          <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Pending</div><div style="font-family:var(--font-mono); font-weight:700; color:${g.pending>0?'var(--rust)':'var(--success)'}; font-size:14px;">${currency(g.pending)}</div></div>
+        </div>
+      </button>`).join('')}
+    </div>`;
+  }
+
+  const complexIdVal = nav.complexId === 'null' ? null : Number(nav.complexId);
+  const complexBills = allBills.filter(b => b.complexId === complexIdVal);
+
+  if (!nav.userId){
+    const tenantIds = new Set(complexBills.map(b=>b.user_id));
+    if (complexIdVal != null){
+      shops.filter(s=>s.complex_id===complexIdVal && s.assigned_to).forEach(s=>tenantIds.add(s.assigned_to.id));
+    }
+    const rows = [...tenantIds].map(uid => {
+      const u = users.find(x=>x.id===uid);
+      const uBills = complexBills.filter(b=>b.user_id===uid);
+      const pending = uBills.filter(b=>b.status==='pending').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+      const partial = uBills.filter(b=>b.status==='partial').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+      const paid = uBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+      return { id:uid, name: u?.name || `#${uid}`, mobile: u?.mobile || '', billCount: uBills.length, pending, partial, paid };
+    }).sort((a,b)=>a.name.localeCompare(b.name));
+
+    if (rows.length === 0){
+      return crumb + emptyStateHtml('No tenants here yet', 'Assign shops in this complex to a tenant to start billing them.', emptyIcon());
+    }
+    return crumb + `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tenant</th><th class="num">Bills</th><th class="num">Pending</th><th class="num">Partial</th><th class="num">Paid</th><th></th></tr></thead>
+        <tbody>
+          ${rows.map(r => `
+          <tr class="billing-pick-row" data-drill-user="${r.id}">
+            <td><strong>${escapeHtml(r.name)}</strong><div class="mono" style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
+            <td class="num">${r.billCount}</td>
+            <td class="num" style="color:${r.pending>0?'var(--rust)':'inherit'};">${currency(r.pending)}</td>
+            <td class="num" style="color:${r.partial>0?'var(--partial)':'inherit'};">${currency(r.partial)}</td>
+            <td class="num" style="color:var(--green-deep);">${currency(r.paid)}</td>
+            <td class="billing-open-link">Open →</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  const userIdVal = Number(nav.userId);
+  const tenantBills = complexBills.filter(b => b.user_id === userIdVal);
+  const tenant = users.find(u=>u.id===userIdVal);
+
+  if (!nav.year){
+    const yrs = [...new Set(tenantBills.map(b=>b.year).filter(Boolean))].sort((a,b)=>b-a);
+    if (yrs.length === 0){
+      return crumb + `
+      <div class="billing-inline-actions">
+        <button class="btn btn-primary btn-sm" data-add-bill-for="${userIdVal}">+ Add bill for ${escapeHtml(tenant?.name||'tenant')}</button>
+      </div>
+      ` + emptyStateHtml('No bills yet for this tenant here', 'Create the first bill to get started.', emptyIcon());
+    }
+    return crumb + `
+    <div class="billing-card-grid billing-year-grid">
+      ${yrs.map(y => {
+        const yBills = tenantBills.filter(b=>b.year===y);
+        const pending = yBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+        return `
+        <button type="button" class="card billing-pick-card billing-year-card" data-drill-year="${y}">
+          <div class="billing-year-num">${y}</div>
+          <div style="font-size:12px; color:var(--muted);">${yBills.length} bill${yBills.length!==1?'s':''}</div>
+          <div style="font-family:var(--font-mono); font-weight:700; font-size:14px; margin-top:4px; color:${pending>0?'var(--rust)':'var(--success)'};">${currency(pending)} pending</div>
+        </button>`;
+      }).join('')}
+    </div>`;
+  }
+
+  const yearVal = Number(nav.year);
+  const yearBills = tenantBills.filter(b => b.year === yearVal);
+
+  const monthCards = MONTH_NAMES.map((name, i) => {
+    const m = i+1;
+    const mBills = yearBills.filter(b=>b.month===m);
+    const pending = mBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+    const selected = nav.month === m;
+    return `
+    <button type="button" class="card billing-pick-card billing-month-card ${selected?'selected':''} ${mBills.length===0?'empty':''}" data-drill-month="${m}">
+      <div class="billing-month-name">${name}</div>
+      ${mBills.length ? `
+      <div style="font-size:12px; color:var(--muted);">${mBills.length} bill${mBills.length!==1?'s':''}</div>
+      <div style="font-family:var(--font-mono); font-weight:700; font-size:13px; color:${pending>0?'var(--rust)':'var(--success)'};">${currency(pending)}</div>
+      ` : `<div style="font-size:12px; color:var(--muted);">—</div>`}
+    </button>`;
+  }).join('');
+
+  let detail = '';
+  if (nav.month){
+    const mBills = yearBills.filter(b=>b.month===nav.month).sort((a,b)=>new Date(b.bill_date)-new Date(a.bill_date));
+    detail = `
+    <div class="billing-month-detail">
+      <div class="billing-inline-actions">
+        <button class="btn btn-primary btn-sm" data-add-bill-for="${userIdVal}">+ Add bill</button>
+        <button class="btn btn-ghost btn-sm" data-record-payment-for="${userIdVal}">Record payment</button>
+      </div>
+      ${mBills.length === 0 ? emptyStateHtml('No bills this month', 'Use "+ Add bill" to create one.', emptyIcon()) : mBills.map(b => `
+      <div class="billing-bill-card">
+        <div class="billing-bill-head">
+          <div>
+            <strong>${escapeHtml(b.bill_type)}</strong> <span class="mono" style="color:var(--muted);">#${b.id}</span>
+            ${b.description ? `<div style="font-size:12px; color:var(--muted); margin-top:2px;">${escapeHtml(b.description)}</div>` : ''}
+          </div>
+          <div style="text-align:right;">
+            ${stampHtml(b.status)}${b.isOverdue ? ' <span class="stamp pending">overdue</span>' : ''}
+            <div style="font-family:var(--font-mono); font-weight:700; margin-top:4px;">${currency(b.amount)}</div>
+          </div>
+        </div>
+        <div class="billing-bill-meta">
+          <span>Bill date: ${dateFmt(b.bill_date)}</span>
+          <span>Due: ${dateFmt(b.due_date)}</span>
+          <span>Paid: ${currency(b.paid_amount)}</span>
+          <span>Pending: ${currency(b.pending_amount)}</span>
+        </div>
+        ${b.payments.length ? `
+        <div class="billing-payments-list">
+          ${b.payments.map(p => `
+          <div class="billing-payment-row">
+            <span>${dateFmt(p.payment_date)} · ${escapeHtml(p.payment_method)}</span>
+            <span class="mono">${currency(p.amount)}</span>
+            <span class="row-actions">
+              <button class="btn-icon" data-edit-payment="${p.id}" aria-label="Edit payment">${editIcon()}</button>
+              <button class="btn-icon" data-delete-payment="${p.id}" aria-label="Delete payment">${trashIcon()}</button>
+            </span>
+          </div>`).join('')}
+        </div>` : ''}
+        <div class="row-actions" style="margin-top:8px;">
+          ${b.status !== 'paid' ? `<button class="btn btn-ghost btn-sm" data-record-payment="${b.id}">Record payment</button>` : ''}
+          <button class="btn-icon" data-edit-bill="${b.id}" aria-label="Edit bill">${editIcon()}</button>
+          <button class="btn-icon" data-delete-bill="${b.id}" aria-label="Delete bill">${trashIcon()}</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  return crumb + `<div class="billing-card-grid billing-month-grid">${monthCards}</div>` + detail;
+}
+
+function attachBillingResultHandlers(){
+  document.querySelectorAll('[data-drill-complex]').forEach(el => el.addEventListener('click', () => {
+    state.billing.nav = { complexId: el.dataset.drillComplex, userId:null, year:null, month:null };
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-drill-user]').forEach(el => el.addEventListener('click', () => {
+    state.billing.nav.userId = el.dataset.drillUser;
+    state.billing.nav.year = null;
+    state.billing.nav.month = null;
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-drill-year]').forEach(el => el.addEventListener('click', () => {
+    state.billing.nav.year = el.dataset.drillYear;
+    state.billing.nav.month = null;
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-drill-month]').forEach(el => el.addEventListener('click', () => {
+    const m = Number(el.dataset.drillMonth);
+    state.billing.nav.month = state.billing.nav.month === m ? null : m;
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-crumb]').forEach(el => el.addEventListener('click', () => {
+    const level = el.dataset.crumb;
+    if (level === 'complex') state.billing.nav = { complexId:null, userId:null, year:null, month:null };
+    else if (level === 'tenant') state.billing.nav = { ...state.billing.nav, userId:null, year:null, month:null };
+    else if (level === 'year') state.billing.nav = { ...state.billing.nav, year:null, month:null };
+    else if (level === 'month') state.billing.nav = { ...state.billing.nav, month:null };
+    renderBillingResults();
+  }));
+
+  document.querySelectorAll('[data-add-bill-for]').forEach(el => el.addEventListener('click', () => openBillModal(Number(el.dataset.addBillFor))));
+  document.querySelectorAll('[data-record-payment-for]').forEach(el => el.addEventListener('click', () => {
+    renderPaymentForm({ preselectedComplexId: state.billing.nav.complexId==='null'?null:Number(state.billing.nav.complexId), preselectedUserId: Number(el.dataset.recordPaymentFor) });
+  }));
+
   document.querySelectorAll('[data-record-payment]').forEach(btn => btn.addEventListener('click', () => openRecordPaymentModal(Number(btn.dataset.recordPayment))));
   document.querySelectorAll('[data-edit-bill]').forEach(btn => btn.addEventListener('click', () => openEditBillModal(Number(btn.dataset.editBill))));
   document.querySelectorAll('[data-delete-bill]').forEach(btn => btn.addEventListener('click', () => {
     const bill = state.cache.bills.find(x => x.id === Number(btn.dataset.deleteBill));
     if (bill) confirmDeleteBill(bill);
   }));
-  document.getElementById('generateRentBillsBtn')?.addEventListener('click', openGenerateRentBillsModal);
-  initBillFilters();
+  document.querySelectorAll('[data-edit-payment]').forEach(btn => btn.addEventListener('click', () => openEditPaymentModal(Number(btn.dataset.editPayment))));
+  document.querySelectorAll('[data-delete-payment]').forEach(btn => btn.addEventListener('click', () => {
+    const pay = state.cache.payments.find(x => x.id === Number(btn.dataset.deletePayment));
+    if (pay) confirmDeletePayment(pay);
+  }));
 }
 
 /* ---- Manual rent-bill generation trigger ---- */
@@ -911,7 +1310,7 @@ function openGenerateRentBillsModal(){
       `;
       state.loaded.bills = false;
       showToast(`${createdCount} rent bill${createdCount !== 1 ? 's' : ''} generated`, 'success');
-      if (state.view === 'bills') await renderView('bills');
+      if (state.view === 'billing') await renderView('billing');
     } catch(err) {
       showToast(err.message || 'Something went wrong', 'error');
     } finally {
@@ -990,7 +1389,7 @@ function openEditBillModal(billId){
       state.loaded.bills = false;
       closeModal();
       showToast('Bill updated', 'success');
-      await renderView('bills');
+      await renderView('billing');
     });
   });
 }
@@ -1010,215 +1409,9 @@ function confirmDeleteBill(bill){
       state.loaded.payments = false;
       closeModal();
       showToast(`Bill #${bill.id} deleted`, 'success');
-      await renderView('bills');
+      await renderView('billing');
     }, 'Deleting…');
   });
-}
-
-function initBillFilters(){
-  const applyBillFilters = () => {
-    const q = (document.getElementById('billSearch')?.value||'').trim().toLowerCase();
-    const cid = document.getElementById('billFilterComplex')?.value||'';
-    const uid = document.getElementById('billFilterUser')?.value||'';
-    const status = document.getElementById('billFilterStatus')?.value||'';
-    const type = document.getElementById('billFilterType')?.value||'';
-    const month = document.getElementById('billFilterMonth')?.value||'';
-    const year = document.getElementById('billFilterYear')?.value||'';
-    const sort = document.getElementById('billSort')?.value||'newest';
-    const tbody = document.getElementById('billsTbody');
-    if (!tbody) return;
-    const now = new Date();
-    let rows = Array.from(tbody.querySelectorAll('tr'));
-    rows.forEach(tr => {
-      let show = true;
-      if (q && !tr.dataset.search?.toLowerCase().includes(q)) show = false;
-      if (cid && tr.dataset.complexId !== cid) show = false;
-      if (uid && tr.dataset.userId !== uid) show = false;
-      if (status === 'overdue') {
-        const isOverdue = tr.dataset.status !== 'paid' && tr.dataset.due && new Date(tr.dataset.due) < now;
-        if (!isOverdue) show = false;
-      } else if (status === 'due-this-month') {
-        const due = tr.dataset.due ? new Date(tr.dataset.due) : null;
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthEnd = new Date(now.getFullYear(), now.getMonth()+1, 0, 23, 59, 59);
-        const isDueThisMonth = tr.dataset.status !== 'paid' && due && due >= monthStart && due <= monthEnd;
-        if (!isDueThisMonth) show = false;
-      } else if (status === 'outstanding') {
-        if (tr.dataset.status === 'paid') show = false;
-      } else if (status && tr.dataset.status !== status) show = false;
-      if (type && tr.dataset.type !== type) show = false;
-      if (month) { const due = tr.dataset.due; if (!due || String(new Date(due).getMonth()+1) !== month) show = false; }
-      if (year) { const due = tr.dataset.due || tr.dataset.date; if (!due || String(new Date(due).getFullYear()) !== year) show = false; }
-      tr.style.display = show ? '' : 'none';
-    });
-    // Sort visible rows
-    const visRows = rows.filter(r => r.style.display !== 'none');
-    visRows.sort((a,b) => {
-      if (sort === 'newest') return new Date(b.dataset.date) - new Date(a.dataset.date);
-      if (sort === 'oldest') return new Date(a.dataset.date) - new Date(b.dataset.date);
-      if (sort === 'due-asc') return new Date(a.dataset.due) - new Date(b.dataset.due);
-      if (sort === 'due-desc') return new Date(b.dataset.due) - new Date(a.dataset.due);
-      if (sort === 'amount-high') return Number(b.dataset.amount) - Number(a.dataset.amount);
-      if (sort === 'amount-low') return Number(a.dataset.amount) - Number(b.dataset.amount);
-      if (sort === 'pending-first') return Number(b.dataset.pending) - Number(a.dataset.pending);
-      if (sort === 'tenant') return (a.dataset.search||'').localeCompare(b.dataset.search||'');
-      if (sort === 'bill-date-asc') return new Date(a.dataset.billDate) - new Date(b.dataset.billDate);
-      if (sort === 'bill-date-desc') return new Date(b.dataset.billDate) - new Date(a.dataset.billDate);
-      if (sort === 'created-at-asc') return new Date(a.dataset.createdAt) - new Date(b.dataset.createdAt);
-      if (sort === 'created-at-desc') return new Date(b.dataset.createdAt) - new Date(a.dataset.createdAt);
-      return 0;
-    });
-    visRows.forEach(r => tbody.appendChild(r));
-    const count = visRows.length;
-    const countEl = document.getElementById('billCount');
-    if (countEl) countEl.textContent = count + ' record' + (count !== 1 ? 's' : '');
-    const emptyEl = document.getElementById('billsEmpty');
-    if (emptyEl) emptyEl.style.display = count === 0 ? 'block' : 'none';
-  };
-
-  ['billSearch','billFilterComplex','billFilterUser','billFilterStatus','billFilterType','billFilterMonth','billFilterYear','billSort']
-    .forEach(id => { const el=document.getElementById(id); if(el) el.addEventListener(el.tagName==='INPUT'?'input':'change', applyBillFilters); });
-
-  document.getElementById('billClearFilters')?.addEventListener('click', () => {
-    ['billSearch','billFilterComplex','billFilterUser','billFilterStatus','billFilterType','billFilterMonth','billFilterYear'].forEach(id => { const el=document.getElementById(id); if(el) { el.value=''; } });
-    applyBillFilters();
-  });
-
-  // Apply any filter requested from the dashboard's "at a glance" cards
-  if (pendingBillsViewFilter) {
-    const statusSel = document.getElementById('billFilterStatus');
-    const pseudoLabels = { 'due-this-month':'Due this month', outstanding:'Tenants with dues (outstanding)' };
-    if (statusSel) {
-      if (pseudoLabels[pendingBillsViewFilter] && !statusSel.querySelector(`option[value="${pendingBillsViewFilter}"]`)) {
-        statusSel.insertAdjacentHTML('beforeend', `<option value="${pendingBillsViewFilter}">${pseudoLabels[pendingBillsViewFilter]}</option>`);
-      }
-      if (['overdue','partial','paid','pending','due-this-month','outstanding'].includes(pendingBillsViewFilter)) {
-        statusSel.value = pendingBillsViewFilter;
-      }
-    }
-    pendingBillsViewFilter = null;
-  }
-
-  applyBillFilters();
-}
-
-/* ================================================================
-   PAYMENTS VIEW
-   ================================================================ */
-async function paymentsView(){
-  const [payments, bills, users, shops, complexes] = await Promise.all([
-    ensureLoaded('payments','/api/payment'),
-    ensureLoaded('bills','/api/bill'),
-    ensureLoaded('users','/api/user'),
-    ensureLoaded('shops','/api/shop'),
-    ensureLoaded('complexes','/api/complex'),
-  ]);
-  const userName = (id) => users.find(u=>u.id===id)?.name || `#${id}`;
-  const userMobile = (id) => users.find(u=>u.id===id)?.mobile || '';
-  const shopNum = (id) => shops.find(s=>s.id===id)?.shop_number || `#${id}`;
-  const billRef = (id) => { const b = bills.find(x=>x.id===id); return b ? `#${b.id} · ${b.bill_type}` : `#${id}`; };
-  const billTenant = (id) => { const b = bills.find(x=>x.id===id); return b ? userName(b.user_id) : '—'; };
-  const billTenantId = (id) => { const b = bills.find(x=>x.id===id); return b ? b.user_id : null; };
-  const billTenantMobile = (id) => { const b = bills.find(x=>x.id===id); return b ? userMobile(b.user_id) : ''; };
-  const billShop = (id) => { const b = bills.find(x=>x.id===id); return b ? shopNum(b.shop_id) : '—'; };
-  const billShopId = (id) => { const b = bills.find(x=>x.id===id); return b ? b.shop_id : null; };
-  const billComplexId = (id) => { const b = bills.find(x=>x.id===id); if(!b) return null; const s=shops.find(s2=>s2.id===b.shop_id); return s?.complex_id||null; };
-  const complexName = (id) => complexes.find(c=>c.id===id)?.name || '';
-  const tenants = users.filter(u=>u.role==='tenant');
-  const methods = [...new Set(payments.map(p=>p.payment_method).filter(Boolean))];
-
-  return `
-  <div class="filter-bar">
-    <div class="field search-full">
-      <label>Search</label>
-      <input class="search-input" id="paySearch" placeholder="Tenant name, shop #, receipt #, payment ID…" style="max-width:100%; min-width:0; width:100%;">
-    </div>
-    <div class="field">
-      <label>Complex</label>
-      <select id="payFilterComplex">
-        <option value="">All complexes</option>
-        ${complexes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Tenant</label>
-      <select id="payFilterUser">
-        <option value="">All tenants</option>
-        ${tenants.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Method</label>
-      <select id="payFilterMethod">
-        <option value="">All methods</option>
-        ${methods.map(m=>`<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Month</label>
-      <select id="payFilterMonth">
-        <option value="">Any month</option>
-        ${Array.from({length:12},(_,i)=>`<option value="${i+1}">${new Date(2000,i).toLocaleString('en-IN',{month:'long'})}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Year</label>
-      <input id="payFilterYear" type="number" min="2020" max="2099" placeholder="Year" style="width:90px;">
-    </div>
-    <div class="field">
-      <label>Sort</label>
-      <select id="paySort" class="sort-select">
-        <option value="newest">Newest first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="amount-high">Highest amount</option>
-        <option value="amount-low">Lowest amount</option>
-        <option value="tenant">Tenant A-Z</option>
-      </select>
-    </div>
-    <button class="btn btn-ghost filter-clear-btn" id="payClearFilters">Clear filters</button>
-    <span class="filter-count" id="payCount"></span>
-  </div>
-  ${payments.length === 0 ? emptyStateHtml('No payments recorded', 'Payments you record against bills will appear here.', emptyIcon()) : `
-  <div class="table-wrap">
-    <table id="paymentsTable">
-      <thead><tr><th>Payment</th><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th class="num">Amount</th><th>Method</th><th>Date</th><th>Remarks</th><th></th></tr></thead>
-      <tbody id="paymentsTbody">
-        ${payments.map(p => {
-          const tid = billTenantId(p.bill_id);
-          const sid = billShopId(p.bill_id);
-          const cid = billComplexId(p.bill_id);
-          return `
-          <tr data-pay-id="${p.id}" data-user-id="${tid||''}" data-shop-id="${sid||''}" data-complex-id="${cid||''}"
-              data-method="${escapeHtml(p.payment_method)}" data-date="${p.payment_date||''}" data-amount="${p.amount}"
-              data-search="${escapeHtml('#'+p.id+' '+billTenant(p.bill_id)+' '+billTenantMobile(p.bill_id)+' '+billShop(p.bill_id)+' '+complexName(cid)+' '+billRef(p.bill_id)+' '+p.payment_method)}">
-            <td class="mono">#${p.id}</td>
-            <td class="mono">${escapeHtml(billRef(p.bill_id))}</td>
-            <td>${escapeHtml(billTenant(p.bill_id))}</td>
-            <td class="mono">${escapeHtml(billShop(p.bill_id))}</td>
-            <td>${escapeHtml(complexName(cid))}</td>
-            <td class="num">${currency(p.amount)}</td>
-            <td>${escapeHtml(p.payment_method)}</td>
-            <td>${dateFmt(p.payment_date)}</td>
-            <td>${escapeHtml(p.remarks || '—')}</td>
-            <td><div class="row-actions">
-              <button class="btn-icon" data-edit-payment="${p.id}" aria-label="Edit payment">${editIcon()}</button>
-              <button class="btn-icon" data-delete-payment="${p.id}" aria-label="Delete payment">${trashIcon()}</button>
-            </div></td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-    <div id="paymentsEmpty" class="empty-compact" style="display:none;">No payments match your filters.</div>
-  </div>`}`;
-}
-
-function attachPaymentHandlers(){
-  document.querySelectorAll('[data-edit-payment]').forEach(btn => btn.addEventListener('click', () => openEditPaymentModal(Number(btn.dataset.editPayment))));
-  document.querySelectorAll('[data-delete-payment]').forEach(btn => btn.addEventListener('click', () => {
-    const pay = state.cache.payments.find(x => x.id === Number(btn.dataset.deletePayment));
-    if (pay) confirmDeletePayment(pay);
-  }));
-  initPaymentFilters();
 }
 
 /* ---- Edit / delete a single payment ---- */
@@ -1280,7 +1473,7 @@ function openEditPaymentModal(paymentId){
       state.loaded.bills = false;
       closeModal();
       showToast('Payment updated', 'success');
-      await renderView('payments');
+      await renderView('billing');
     });
   });
 }
@@ -1300,56 +1493,9 @@ function confirmDeletePayment(pay){
       state.loaded.bills = false;
       closeModal();
       showToast(`Payment #${pay.id} deleted`, 'success');
-      await renderView('payments');
+      await renderView('billing');
     }, 'Deleting…');
   });
-}
-
-function initPaymentFilters(){
-  const apply = () => {
-    const q = (document.getElementById('paySearch')?.value||'').trim().toLowerCase();
-    const cid = document.getElementById('payFilterComplex')?.value||'';
-    const uid = document.getElementById('payFilterUser')?.value||'';
-    const method = document.getElementById('payFilterMethod')?.value||'';
-    const month = document.getElementById('payFilterMonth')?.value||'';
-    const year = document.getElementById('payFilterYear')?.value||'';
-    const sort = document.getElementById('paySort')?.value||'newest';
-    const tbody = document.getElementById('paymentsTbody');
-    if (!tbody) return;
-    let rows = Array.from(tbody.querySelectorAll('tr'));
-    rows.forEach(tr => {
-      let show = true;
-      if (q && !tr.dataset.search?.toLowerCase().includes(q)) show = false;
-      if (cid && tr.dataset.complexId !== cid) show = false;
-      if (uid && tr.dataset.userId !== uid) show = false;
-      if (method && tr.dataset.method !== method) show = false;
-      if (month) { const d=tr.dataset.date; if(!d||String(new Date(d).getMonth()+1)!==month) show=false; }
-      if (year) { const d=tr.dataset.date; if(!d||String(new Date(d).getFullYear())!==year) show=false; }
-      tr.style.display = show ? '' : 'none';
-    });
-    const visRows = rows.filter(r=>r.style.display!=='none');
-    visRows.sort((a,b) => {
-      if (sort==='newest') return new Date(b.dataset.date)-new Date(a.dataset.date);
-      if (sort==='oldest') return new Date(a.dataset.date)-new Date(b.dataset.date);
-      if (sort==='amount-high') return Number(b.dataset.amount)-Number(a.dataset.amount);
-      if (sort==='amount-low') return Number(a.dataset.amount)-Number(b.dataset.amount);
-      if (sort==='tenant') return (a.dataset.search||'').localeCompare(b.dataset.search||'');
-      return 0;
-    });
-    visRows.forEach(r=>tbody.appendChild(r));
-    const count = visRows.length;
-    const countEl = document.getElementById('payCount');
-    if (countEl) countEl.textContent = count + ' record' + (count!==1?'s':'');
-    const emptyEl = document.getElementById('paymentsEmpty');
-    if (emptyEl) emptyEl.style.display = count===0?'block':'none';
-  };
-  ['paySearch','payFilterComplex','payFilterUser','payFilterMethod','payFilterMonth','payFilterYear','paySort']
-    .forEach(id => { const el=document.getElementById(id); if(el) el.addEventListener(el.tagName==='INPUT'?'input':'change', apply); });
-  document.getElementById('payClearFilters')?.addEventListener('click', () => {
-    ['paySearch','payFilterComplex','payFilterUser','payFilterMethod','payFilterMonth','payFilterYear'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-    apply();
-  });
-  apply();
 }
 
 /* ================================================================
@@ -3704,8 +3850,6 @@ function openCreateModal(view){
     case 'complexes': return openComplexModal();
     case 'shops': return openShopModal();
     case 'users': return openUserModal();
-    case 'bills': return openBillModal();
-    case 'payments': return openPaymentModal();
   }
 }
 
@@ -3880,12 +4024,30 @@ function renderUserForm(existing){
           <div class="hint">Setting to Inactive automatically releases all of this tenant's shops back to "available".</div>
         </div>`}
       </div>
+      <div id="uRentBillingSection" class="form-grid" style="display:${(isEdit ? existing?.role==='tenant' : true) ? '' : 'none'}; margin-top:4px; padding-top:14px; border-top:1px dashed var(--line);">
+        <div class="field">
+          <label for="uRentBillDate">Rent bill date</label>
+          <input id="uRentBillDate" type="number" min="1" max="28" placeholder="e.g. 5" value="${existing?.rent_bill_date ?? ''}">
+          <div class="hint">Day of month (1-28) the rent bill auto-generates on.</div>
+        </div>
+        <div class="field" style="display:flex; align-items:flex-end;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; font-weight:600;">
+            <input type="checkbox" id="uAutoRentBill" style="width:16px; height:16px; accent-color:var(--green); margin:0;" ${existing?.auto_rent_bill_enabled ? 'checked' : ''}>
+            Auto-generate rent bill monthly
+          </label>
+        </div>
+      </div>
     </form>
   `, `
     <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
     <button class="btn btn-primary" id="saveBtn">${isEdit ? 'Save changes' : 'Add user'}</button>
   `);
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  if (!isEdit){
+    document.getElementById('uRole').addEventListener('change', function(){
+      document.getElementById('uRentBillingSection').style.display = this.value === 'tenant' ? '' : 'none';
+    });
+  }
   document.getElementById('saveBtn').addEventListener('click', async () => {
     const form = document.getElementById('userForm');
     clearFieldErrors(form);
@@ -3896,15 +4058,23 @@ function renderUserForm(existing){
     if (!name){ showFieldError('uNameErr','Name is required'); document.getElementById('uName').classList.add('invalid'); ok=false; }
     if (!/^[0-9]{10}$/.test(mobile)){ showFieldError('uMobileErr','Enter a valid 10-digit mobile'); document.getElementById('uMobile').classList.add('invalid'); ok=false; }
 
+    const rentBillingVisible = document.getElementById('uRentBillingSection').style.display !== 'none';
+    const rentBillDateVal = document.getElementById('uRentBillDate').value;
+    const rent_bill_date = rentBillingVisible && rentBillDateVal ? Number(rentBillDateVal) : null;
+    const auto_rent_bill_enabled = rentBillingVisible ? document.getElementById('uAutoRentBill').checked : false;
+    if (rentBillingVisible && rentBillDateVal && (rent_bill_date < 1 || rent_bill_date > 28)){
+      showToast('Rent bill date must be between 1 and 28', 'error'); ok=false;
+    }
+
     let body;
     if (isEdit){
       const is_active = document.getElementById('uActive').value === 'true';
-      body = { name, mobile, email, is_active };
+      body = { name, mobile, email, is_active, rent_bill_date, auto_rent_bill_enabled };
     } else {
       const password = document.getElementById('uPassword').value;
       const role = document.getElementById('uRole').value;
       if (!password || password.length < 4){ showFieldError('uPasswordErr','Password is required (min 4 chars)'); document.getElementById('uPassword').classList.add('invalid'); ok=false; }
-      body = { name, mobile, email, password, role };
+      body = { name, mobile, email, password, role, rent_bill_date, auto_rent_bill_enabled };
     }
     if (!ok) return;
 
@@ -4058,7 +4228,7 @@ function renderReassignConfirm(userId, userName, ids){
 /* ================================================================
    BILL MODAL — Smart cascade: Complex → Shop → Tenant (auto-locked)
    ================================================================ */
-async function openBillModal(){
+async function openBillModal(presetUserId){
   await Promise.all([
     ensureLoaded('complexes','/api/complex'),
     ensureLoaded('shops','/api/shop'),
@@ -4081,7 +4251,7 @@ async function openBillModal(){
         <label for="bTenant">Tenant</label>
         <select id="bTenant">
           <option value="">— select tenant —</option>
-          ${tenants.map(u => `<option value="${u.id}">${escapeHtml(u.name)} · ${escapeHtml(u.mobile)}</option>`).join('')}
+          ${tenants.map(u => `<option value="${u.id}" ${presetUserId==u.id?'selected':''}>${escapeHtml(u.name)} · ${escapeHtml(u.mobile)}</option>`).join('')}
         </select>
       </div>
 
@@ -4211,6 +4381,10 @@ async function openBillModal(){
     renderShopList(uid);
   });
 
+  if (presetUserId){
+    renderShopList(Number(presetUserId));
+  }
+
   document.querySelectorAll('.bill-type-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       document.querySelectorAll('.bill-type-chip').forEach(c => c.classList.remove('active'));
@@ -4287,7 +4461,7 @@ async function openBillModal(){
       closeModal();
       if (failed === 0) showToast(`${created} bill${created>1?'s':''} created`, 'success');
       else showToast(`${created} bill${created>1?'s':''} created, ${failed} failed`, created>0 ? 'default' : 'error');
-      await renderView('bills');
+      await renderView('billing');
     }, 'Creating…');
   });
 }
@@ -4322,6 +4496,7 @@ async function renderPaymentForm(presel){
   const preComplexId = presel?.preselectedComplexId || '';
   const preShopId = presel?.preselectedShopId || '';
   const preBillId = presel?.preselectedBillId || '';
+  const preUserId = presel?.preselectedUserId || '';
 
   openModal('Record payment', `
     <div style="font-size:12px; color:var(--muted); background:var(--paper); border-radius:var(--radius-sm); padding:8px 11px; margin-bottom:16px; display:flex; align-items:center; gap:7px;">
@@ -4735,7 +4910,7 @@ async function renderPaymentForm(presel){
     );
     const tenantsInComplex = state.cache.users.filter(u => u.role === 'tenant' && tenantIdsInComplex.has(u.id));
     userSel.innerHTML = '<option value="">— select tenant —</option>' +
-      tenantsInComplex.map(u => `<option value="${u.id}">${escapeHtml(u.name)} · ${escapeHtml(u.mobile)}</option>`).join('');
+      tenantsInComplex.map(u => `<option value="${u.id}" ${preUserId==u.id?'selected':''}>${escapeHtml(u.name)} · ${escapeHtml(u.mobile)}</option>`).join('');
 
     if (tenantsInComplex.length === 0){
       userSel.innerHTML = '<option value="">No tenants with shops in this complex</option>';
@@ -4929,7 +5104,7 @@ async function renderPaymentForm(presel){
         if (res.unallocated_amount > 0.005) msg += ` ${currency(res.unallocated_amount)} left unallocated.`;
         if (capped > 0) msg += ` ${capped} amount(s) were capped — balances had changed since preview.`;
         showToast(msg, 'success');
-        await renderView(state.view === 'bills' ? 'bills' : 'payments');
+        await renderView('billing');
       });
       return;
     }
@@ -4974,7 +5149,7 @@ async function renderPaymentForm(presel){
       state.loaded.payments = false;
       closeModal();
       showToast(`Payment of ${currency(amount)} recorded`, 'success');
-      await renderView(state.view === 'bills' ? 'bills' : 'payments');
+      await renderView('billing');
     });
   });
 
@@ -4987,6 +5162,13 @@ async function renderPaymentForm(presel){
   if (presel?.preselectedComplexId){
     document.getElementById('pComplex').value = presel.preselectedComplexId;
     onComplexChange();
+  }
+
+  // Trigger preselected tenant (no specific bill/shop) if coming from the billing browser
+  if (preUserId && !preBillId && !preShopId){
+    document.getElementById('pathByUser').click();
+    const userSel = document.getElementById('pUser');
+    if (userSel.value) userSel.dispatchEvent(new Event('change'));
   }
 }
 

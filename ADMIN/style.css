@@ -549,6 +549,65 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .drill-card .dc-pending.clear{ color:var(--success); }
 @media (max-width:480px){ .drill-grid{ grid-template-columns:repeat(2,1fr); gap:8px; } .drill-card{ padding:11px 12px; } }
 
+/* ============================================================
+   BILLING VIEW — grouped Bills & Payments browser
+   ============================================================ */
+.billing-toolbar{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+
+/* Multi-select filter fields */
+.ms-field{ position:relative; }
+.ms-btn{
+  display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%;
+  padding:8px 10px; font-size:13px; border:1.5px solid var(--line); border-radius:var(--radius-sm);
+  background:var(--paper-raised); color:var(--ink); cursor:pointer; text-align:left;
+}
+.ms-btn:hover{ border-color:var(--green); }
+.ms-btn svg{ flex-shrink:0; opacity:.6; }
+.ms-panel{
+  display:none; position:absolute; top:calc(100% + 6px); left:0; min-width:220px; z-index:60;
+  background:var(--paper-raised); border:1.5px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow-lg); padding:6px;
+}
+.ms-panel.open{ display:block; }
+.ms-empty{ font-size:12.5px; color:var(--muted); padding:8px; }
+
+/* Breadcrumb */
+.billing-breadcrumb{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12.5px; margin-bottom:14px; }
+.billing-crumb-seg{ background:none; border:none; padding:2px 4px; font-size:12.5px; color:var(--muted); cursor:pointer; font-weight:600; }
+.billing-crumb-seg:hover{ color:var(--green-deep); text-decoration:underline; }
+.billing-crumb-seg.current{ color:var(--ink); font-weight:700; cursor:default; }
+.billing-crumb-seg.current:hover{ text-decoration:none; }
+.billing-crumb-sep{ color:var(--line); }
+
+/* Card grids shared by complex / year / month levels */
+.billing-card-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; margin-bottom:18px; }
+.billing-year-grid{ grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
+.billing-month-grid{ grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+.billing-pick-card{ text-align:left; cursor:pointer; width:100%; font-family:inherit; }
+.billing-year-card{ background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow-sm); transition:box-shadow .15s, border-color .15s; }
+.billing-year-card:hover{ box-shadow:var(--shadow-md); border-color:var(--green); }
+.billing-year-num{ font-family:var(--font-display); font-weight:700; font-size:19px; }
+.billing-month-card{ background:var(--paper-raised); border:1.5px solid var(--line); border-radius:var(--radius-sm); padding:10px 12px; transition:border-color .12s, box-shadow .12s; }
+.billing-month-card:hover{ border-color:var(--green); box-shadow:var(--shadow-sm); }
+.billing-month-card.selected{ border-color:var(--ink); background:var(--paper); }
+.billing-month-card.empty{ opacity:.55; }
+.billing-month-name{ font-weight:700; font-size:13px; margin-bottom:3px; }
+
+/* Tenant list rows (complex → tenant level) */
+.billing-pick-row{ cursor:pointer; }
+.billing-pick-row:hover{ background:var(--paper); }
+.billing-open-link{ color:var(--green-deep); font-weight:600; font-size:12.5px; white-space:nowrap; }
+
+.billing-inline-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+
+/* Month detail — bill + payment cards */
+.billing-month-detail{ margin-top:16px; }
+.billing-bill-card{ background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; margin-bottom:12px; }
+.billing-bill-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.billing-bill-meta{ display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--muted); margin-top:8px; }
+.billing-payments-list{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); display:flex; flex-direction:column; gap:6px; }
+.billing-payment-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; }
+
 /* Finance page user card */
 .user-finance-card{ background:var(--paper-raised); border:1.5px solid var(--green); border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
 .user-finance-card .ufc-name{ font-weight:700; font-size:16px; margin-bottom:2px; }

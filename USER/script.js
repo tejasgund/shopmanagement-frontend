@@ -424,6 +424,8 @@ async function loadTenantPortal(){
           <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Tenant ID</div><div class="mono" style="margin-top:3px;">#${profile.id}</div></div>
           <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Status</div><div style="margin-top:3px;"><span class="pill ${profile.is_active?'active-pill':'inactive-pill'}"><span class="pill-dot"></span>${profile.is_active?'Active':'Inactive'}</span></div></div>
           <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Shops</div><div style="margin-top:3px; font-weight:700;">${shops.length}</div></div>
+          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Rent Bill Date</div><div style="margin-top:3px; font-weight:600;">${profile.rent_bill_date ? `Day ${profile.rent_bill_date} of month` : '—'}</div></div>
+          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Auto-billing</div><div style="margin-top:3px;"><span class="pill ${profile.auto_rent_bill_enabled?'active-pill':'inactive-pill'}"><span class="pill-dot"></span>${profile.auto_rent_bill_enabled?'Auto ON':'Auto OFF'}</span></div></div>
         </div>
       </div>
     </div>
