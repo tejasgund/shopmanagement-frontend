@@ -164,6 +164,7 @@ const viewMeta = {
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
   reports:   { title:'Reports', crumb:'Occupancy, collections and outstanding dues', action:null },
   ledger: { title:'Month-wise Ledger', crumb:'Monthly breakdown of bills, payments, and deposits', action:null },
+  audit: { title:'Audit Log', crumb:'Every create, update, and delete action across the system', action:null },
 };
 
 document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
@@ -215,7 +216,7 @@ async function renderView(view){
       case 'deposits': content.innerHTML = await depositsView(); attachDepositHandlers(); break;
       case 'reports': content.innerHTML = await reportsView(); attachReportsHandlers(); break;
       case 'ledger': content.innerHTML = await ledgerView(); attachLedgerHandlers(); break;
-      case 'ledger': content.innerHTML = await ledgerView(); attachLedgerHandlers(); break;
+      case 'audit': content.innerHTML = await auditView(); attachAuditHandlers(); break;
     }
     attachSearchFilter();
   } catch (err) {
@@ -818,6 +819,7 @@ async function billsView(){
       </select>
     </div>
     <button class="btn btn-ghost filter-clear-btn" id="billClearFilters">Clear filters</button>
+    <button class="btn btn-ghost" id="generateRentBillsBtn" style="margin-left:auto;">⟳ Generate rent bills…</button>
     <span class="filter-count" id="billCount"></span>
   </div>
   ${bills.length === 0 ? emptyStateHtml('No bills yet', 'Pick a tenant and create bills for one or more of their shops.', emptyIcon()) : `
@@ -849,6 +851,8 @@ async function billsView(){
             <td>${dateFmt(b.due_date)}</td>
             <td><div class="row-actions">
               ${b.status !== 'paid' ? `<button class="btn-icon" data-record-payment="${b.id}" aria-label="Record payment">${rupeeIcon()}</button>` : ''}
+              <button class="btn-icon" data-edit-bill="${b.id}" aria-label="Edit bill">${editIcon()}</button>
+              <button class="btn-icon" data-delete-bill="${b.id}" aria-label="Delete bill">${trashIcon()}</button>
             </div></td>
           </tr>`;
         }).join('')}
@@ -861,7 +865,154 @@ function rupeeIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fi
 
 function attachBillHandlers(){
   document.querySelectorAll('[data-record-payment]').forEach(btn => btn.addEventListener('click', () => openRecordPaymentModal(Number(btn.dataset.recordPayment))));
+  document.querySelectorAll('[data-edit-bill]').forEach(btn => btn.addEventListener('click', () => openEditBillModal(Number(btn.dataset.editBill))));
+  document.querySelectorAll('[data-delete-bill]').forEach(btn => btn.addEventListener('click', () => {
+    const bill = state.cache.bills.find(x => x.id === Number(btn.dataset.deleteBill));
+    if (bill) confirmDeleteBill(bill);
+  }));
+  document.getElementById('generateRentBillsBtn')?.addEventListener('click', openGenerateRentBillsModal);
   initBillFilters();
+}
+
+/* ---- Manual rent-bill generation trigger ---- */
+function openGenerateRentBillsModal(){
+  const todayStr = new Date().toISOString().slice(0,10);
+  openModal('Generate rent bills', `
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:14px;">
+      Auto-generates this month's Rent bill — one per assigned shop — for every active tenant with auto-billing enabled whose rent bill date matches the day picked below. This is the same job that runs automatically every night at 02:00 (Asia/Kolkata); it's safe to re-run since already-generated bills for a matching month are skipped, never duplicated.
+    </div>
+    <div class="field">
+      <label for="grbDate">Date to generate for</label>
+      <input type="date" id="grbDate" value="${todayStr}">
+    </div>
+    <div id="grbResult"></div>
+  `, `
+    <button class="btn btn-ghost" id="cancelBtn">Close</button>
+    <button class="btn btn-primary" id="runBtn">Generate</button>
+  `);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('runBtn').addEventListener('click', async () => {
+    const date = document.getElementById('grbDate').value;
+    const btn = document.getElementById('runBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Generating…`;
+    try {
+      const res = await api(`/api/bills/generate-rent${date ? `?date=${date}` : ''}`, { method:'POST' });
+      const createdCount = res.created?.length || 0;
+      document.getElementById('grbResult').innerHTML = `
+        <div class="info-card" style="margin-top:14px;">
+          <div class="info-row"><span class="info-label">Users matched</span><span class="info-val">${res.users_matched}</span></div>
+          <div class="info-row"><span class="info-label">Bills created</span><span class="info-val good">${createdCount}</span></div>
+          <div class="info-row"><span class="info-label">Skipped — already generated</span><span class="info-val">${res.skipped_existing}</span></div>
+          <div class="info-row"><span class="info-label">Skipped — zero rent</span><span class="info-val">${res.skipped_zero_rent}</span></div>
+          <div class="info-row"><span class="info-label">Skipped — no shops assigned</span><span class="info-val">${res.skipped_no_shops}</span></div>
+        </div>
+      `;
+      state.loaded.bills = false;
+      showToast(`${createdCount} rent bill${createdCount !== 1 ? 's' : ''} generated`, 'success');
+      if (state.view === 'bills') await renderView('bills');
+    } catch(err) {
+      showToast(err.message || 'Something went wrong', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  });
+}
+
+/* ---- Edit / delete a single bill ---- */
+function openEditBillModal(billId){
+  const bill = state.cache.bills.find(b => b.id === billId);
+  if (!bill){ showToast('Bill not found', 'error'); return; }
+  const dueVal = bill.due_date ? new Date(bill.due_date).toISOString().slice(0,10) : '';
+
+  openModal('Edit bill', `
+    <form id="billEditForm">
+      <div class="field">
+        <label for="ebType">Bill type</label>
+        <input id="ebType" value="${escapeHtml(bill.bill_type)}">
+        ${fieldErrorHtml('ebTypeErr')}
+      </div>
+      <div class="field full">
+        <label for="ebDesc">Description</label>
+        <input id="ebDesc" value="${escapeHtml(bill.description || '')}" placeholder="Optional">
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="ebAmount">Amount (₹)</label>
+          <input id="ebAmount" type="number" step="0.01" min="0.01" value="${Number(bill.amount).toFixed(2)}">
+          ${fieldErrorHtml('ebAmountErr')}
+        </div>
+        <div class="field">
+          <label for="ebDue">Due date</label>
+          <input id="ebDue" type="date" value="${dueVal}">
+        </div>
+        <div class="field">
+          <label for="ebStatus">Status</label>
+          <select id="ebStatus">
+            <option value="pending" ${bill.status === 'pending' ? 'selected' : ''}>Pending</option>
+            <option value="partial" ${bill.status === 'partial' ? 'selected' : ''}>Partial</option>
+            <option value="paid" ${bill.status === 'paid' ? 'selected' : ''}>Paid</option>
+            <option value="cancelled" ${bill.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">Already paid: ${currency(bill.paid_amount)}. Amount can't be reduced below this without first deleting payments.</div>
+    </form>
+  `, `
+    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+    <button class="btn btn-danger-ghost" id="deleteBillBtn" style="margin-right:auto;">Delete bill</button>
+    <button class="btn btn-primary" id="saveBtn">Save changes</button>
+  `);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('deleteBillBtn').addEventListener('click', () => confirmDeleteBill(bill));
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const form = document.getElementById('billEditForm');
+    clearFieldErrors(form);
+    const bill_type = document.getElementById('ebType').value.trim();
+    const description = document.getElementById('ebDesc').value.trim();
+    const amount = parseFloat(document.getElementById('ebAmount').value);
+    const due = document.getElementById('ebDue').value;
+    const status = document.getElementById('ebStatus').value;
+    let ok = true;
+    if (!bill_type){ showFieldError('ebTypeErr','Bill type is required'); document.getElementById('ebType').classList.add('invalid'); ok=false; }
+    if (isNaN(amount) || amount <= 0){ showFieldError('ebAmountErr','Enter a valid amount'); document.getElementById('ebAmount').classList.add('invalid'); ok=false; }
+    if (!ok) return;
+
+    await withSavingState('saveBtn', async () => {
+      await api(`/api/bill/${bill.id}`, { method:'PUT', body:{
+        bill_type, description, amount,
+        due_date: due ? new Date(due).toISOString() : null,
+        status,
+      }});
+      state.loaded.bills = false;
+      closeModal();
+      showToast('Bill updated', 'success');
+      await renderView('bills');
+    });
+  });
+}
+
+function confirmDeleteBill(bill){
+  openModal('Delete bill', `
+    <div class="confirm-body">Are you sure you want to delete bill <strong>#${bill.id} · ${escapeHtml(bill.bill_type)}</strong>? All of its payments will be deleted too. This can't be undone.</div>
+  `, `
+    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+    <button class="btn btn-danger-ghost" id="confirmDeleteBtn">Delete</button>
+  `);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    await withSavingState('confirmDeleteBtn', async () => {
+      await api(`/api/bill/${bill.id}`, { method:'DELETE' });
+      state.loaded.bills = false;
+      state.loaded.payments = false;
+      closeModal();
+      showToast(`Bill #${bill.id} deleted`, 'success');
+      await renderView('bills');
+    }, 'Deleting…');
+  });
 }
 
 function initBillFilters(){
@@ -1030,7 +1181,7 @@ async function paymentsView(){
   ${payments.length === 0 ? emptyStateHtml('No payments recorded', 'Payments you record against bills will appear here.', emptyIcon()) : `
   <div class="table-wrap">
     <table id="paymentsTable">
-      <thead><tr><th>Payment</th><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th class="num">Amount</th><th>Method</th><th>Date</th><th>Remarks</th></tr></thead>
+      <thead><tr><th>Payment</th><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th class="num">Amount</th><th>Method</th><th>Date</th><th>Remarks</th><th></th></tr></thead>
       <tbody id="paymentsTbody">
         ${payments.map(p => {
           const tid = billTenantId(p.bill_id);
@@ -1049,6 +1200,10 @@ async function paymentsView(){
             <td>${escapeHtml(p.payment_method)}</td>
             <td>${dateFmt(p.payment_date)}</td>
             <td>${escapeHtml(p.remarks || '—')}</td>
+            <td><div class="row-actions">
+              <button class="btn-icon" data-edit-payment="${p.id}" aria-label="Edit payment">${editIcon()}</button>
+              <button class="btn-icon" data-delete-payment="${p.id}" aria-label="Delete payment">${trashIcon()}</button>
+            </div></td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -1058,7 +1213,96 @@ async function paymentsView(){
 }
 
 function attachPaymentHandlers(){
+  document.querySelectorAll('[data-edit-payment]').forEach(btn => btn.addEventListener('click', () => openEditPaymentModal(Number(btn.dataset.editPayment))));
+  document.querySelectorAll('[data-delete-payment]').forEach(btn => btn.addEventListener('click', () => {
+    const pay = state.cache.payments.find(x => x.id === Number(btn.dataset.deletePayment));
+    if (pay) confirmDeletePayment(pay);
+  }));
   initPaymentFilters();
+}
+
+/* ---- Edit / delete a single payment ---- */
+function openEditPaymentModal(paymentId){
+  const pay = state.cache.payments.find(p => p.id === paymentId);
+  if (!pay){ showToast('Payment not found', 'error'); return; }
+  const dateVal = pay.payment_date ? new Date(pay.payment_date).toISOString().slice(0,10) : '';
+
+  openModal(`Edit payment #${pay.id}`, `
+    <form id="paymentEditForm">
+      <div class="form-grid">
+        <div class="field">
+          <label for="epAmount">Amount (₹)</label>
+          <input id="epAmount" type="number" step="0.01" min="0.01" value="${Number(pay.amount).toFixed(2)}">
+          ${fieldErrorHtml('epAmountErr')}
+        </div>
+        <div class="field">
+          <label for="epMethod">Payment method</label>
+          <input id="epMethod" value="${escapeHtml(pay.payment_method)}">
+          ${fieldErrorHtml('epMethodErr')}
+        </div>
+        <div class="field">
+          <label for="epDate">Payment date</label>
+          <input id="epDate" type="date" value="${dateVal}">
+        </div>
+        <div class="field full">
+          <label for="epRemarks">Remarks</label>
+          <input id="epRemarks" value="${escapeHtml(pay.remarks || '')}" placeholder="Optional">
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">Saving will automatically re-reconcile the parent bill's paid/pending amount and status.</div>
+    </form>
+  `, `
+    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+    <button class="btn btn-danger-ghost" id="deletePaymentBtn" style="margin-right:auto;">Delete payment</button>
+    <button class="btn btn-primary" id="saveBtn">Save changes</button>
+  `);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('deletePaymentBtn').addEventListener('click', () => confirmDeletePayment(pay));
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const form = document.getElementById('paymentEditForm');
+    clearFieldErrors(form);
+    const amount = parseFloat(document.getElementById('epAmount').value);
+    const payment_method = document.getElementById('epMethod').value.trim();
+    const dateStr = document.getElementById('epDate').value;
+    const remarks = document.getElementById('epRemarks').value.trim();
+    let ok = true;
+    if (isNaN(amount) || amount <= 0){ showFieldError('epAmountErr','Enter a valid amount'); document.getElementById('epAmount').classList.add('invalid'); ok=false; }
+    if (!payment_method){ showFieldError('epMethodErr','Payment method is required'); document.getElementById('epMethod').classList.add('invalid'); ok=false; }
+    if (!ok) return;
+
+    await withSavingState('saveBtn', async () => {
+      await api(`/api/payment/${pay.id}`, { method:'PUT', body:{
+        amount, payment_method, remarks,
+        payment_date: dateStr ? new Date(dateStr).toISOString() : undefined,
+      }});
+      state.loaded.payments = false;
+      state.loaded.bills = false;
+      closeModal();
+      showToast('Payment updated', 'success');
+      await renderView('payments');
+    });
+  });
+}
+
+function confirmDeletePayment(pay){
+  openModal('Delete payment', `
+    <div class="confirm-body">Are you sure you want to delete payment <strong>#${pay.id}</strong> (${currency(pay.amount)})? The parent bill will be re-reconciled. This can't be undone.</div>
+  `, `
+    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+    <button class="btn btn-danger-ghost" id="confirmDeleteBtn">Delete</button>
+  `);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    await withSavingState('confirmDeleteBtn', async () => {
+      await api(`/api/payment/${pay.id}`, { method:'DELETE' });
+      state.loaded.payments = false;
+      state.loaded.bills = false;
+      closeModal();
+      showToast(`Payment #${pay.id} deleted`, 'success');
+      await renderView('payments');
+    }, 'Deleting…');
+  });
 }
 
 function initPaymentFilters(){
@@ -2161,12 +2405,171 @@ async function loadFinanceOverview(){
 }
 
 /* ================================================================
+   AUDIT LOG VIEW
+   ================================================================ */
+let auditState = { page: 1, limit: 20, user_id:'', action:'', table_name:'', start_date:'', end_date:'', search:'' };
+
+async function auditView(){
+  const users = await ensureLoaded('users','/api/user');
+  let filterOptions = { actions: [], table_names: [] };
+  try { filterOptions = await api('/api/audit-logs/filters'); } catch(e){}
+
+  return `
+  <div class="filter-bar">
+    <div class="field search-full">
+      <label>Search</label>
+      <input class="search-input" id="auditSearch" placeholder="User name, mobile, action, table, record #…" value="${escapeHtml(auditState.search)}" style="max-width:100%; min-width:0; width:100%;">
+    </div>
+    <div class="field">
+      <label>User</label>
+      <select id="auditFilterUser">
+        <option value="">All users</option>
+        ${users.map(u=>`<option value="${u.id}" ${String(u.id)===String(auditState.user_id)?'selected':''}>${escapeHtml(u.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>Action</label>
+      <select id="auditFilterAction">
+        <option value="">All actions</option>
+        ${filterOptions.actions.map(a=>`<option value="${escapeHtml(a)}" ${a===auditState.action?'selected':''}>${escapeHtml(a)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>Table</label>
+      <select id="auditFilterTable">
+        <option value="">All tables</option>
+        ${filterOptions.table_names.map(t=>`<option value="${escapeHtml(t)}" ${t===auditState.table_name?'selected':''}>${escapeHtml(t)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>From</label>
+      <input type="date" id="auditFilterStart" value="${auditState.start_date}">
+    </div>
+    <div class="field">
+      <label>To</label>
+      <input type="date" id="auditFilterEnd" value="${auditState.end_date}">
+    </div>
+    <button class="btn btn-ghost filter-clear-btn" id="auditClearFilters">Clear filters</button>
+    <span class="filter-count" id="auditCount"></span>
+  </div>
+  <div id="auditTableWrap">${skeletonHtml()}</div>
+  <div id="auditPager" style="display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:14px;"></div>
+  `;
+}
+
+function attachAuditHandlers(){
+  const reload = () => { auditState.page = 1; loadAuditPage(); };
+  document.getElementById('auditFilterUser').addEventListener('change', e => { auditState.user_id = e.target.value; reload(); });
+  document.getElementById('auditFilterAction').addEventListener('change', e => { auditState.action = e.target.value; reload(); });
+  document.getElementById('auditFilterTable').addEventListener('change', e => { auditState.table_name = e.target.value; reload(); });
+  document.getElementById('auditFilterStart').addEventListener('change', e => { auditState.start_date = e.target.value; reload(); });
+  document.getElementById('auditFilterEnd').addEventListener('change', e => { auditState.end_date = e.target.value; reload(); });
+  let searchDebounce;
+  document.getElementById('auditSearch').addEventListener('input', e => {
+    clearTimeout(searchDebounce);
+    const val = e.target.value;
+    searchDebounce = setTimeout(() => { auditState.search = val; reload(); }, 350);
+  });
+  document.getElementById('auditClearFilters').addEventListener('click', () => {
+    auditState = { page:1, limit:20, user_id:'', action:'', table_name:'', start_date:'', end_date:'', search:'' };
+    navigateTo('audit');
+  });
+  loadAuditPage();
+}
+
+async function loadAuditPage(){
+  const wrap = document.getElementById('auditTableWrap');
+  const pager = document.getElementById('auditPager');
+  wrap.innerHTML = skeletonHtml();
+  try {
+    const params = new URLSearchParams();
+    params.set('page', auditState.page);
+    params.set('limit', auditState.limit);
+    if (auditState.user_id) params.set('user_id', auditState.user_id);
+    if (auditState.action) params.set('action', auditState.action);
+    if (auditState.table_name) params.set('table_name', auditState.table_name);
+    if (auditState.start_date) params.set('start_date', new Date(auditState.start_date).toISOString());
+    if (auditState.end_date) params.set('end_date', new Date(new Date(auditState.end_date).setHours(23,59,59)).toISOString());
+    if (auditState.search) params.set('search', auditState.search);
+    const res = await api(`/api/audit-logs?${params}`);
+    const rows = res.data || [];
+    const countEl = document.getElementById('auditCount');
+    if (countEl) countEl.textContent = res.total + ' record' + (res.total !== 1 ? 's' : '');
+
+    wrap.innerHTML = rows.length === 0 ? emptyStateHtml('No audit log entries', 'Entries appear here as admins create, update, or delete records.', emptyIcon()) : `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Table</th><th>Record</th><th></th></tr></thead>
+        <tbody>
+          ${rows.map(log => `
+            <tr>
+              <td>${dateFmt(log.created_at)}</td>
+              <td>${escapeHtml(log.user?.name || 'Unknown')}${log.user?.mobile ? ` <span style="color:var(--muted);">· ${escapeHtml(log.user.mobile)}</span>` : ''}</td>
+              <td>${auditActionBadge(log.action)}</td>
+              <td class="mono">${escapeHtml(log.table_name || '—')}</td>
+              <td class="mono">${log.record_id ?? '—'}</td>
+              <td><button class="btn-icon" data-view-audit="${log.id}" aria-label="View details">${eyeIcon()}</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+    document.querySelectorAll('[data-view-audit]').forEach(btn => btn.addEventListener('click', () => openAuditDetailModal(Number(btn.dataset.viewAudit))));
+
+    const totalPages = Math.max(1, Math.ceil(res.total / auditState.limit));
+    pager.innerHTML = `
+      <button class="btn btn-sm btn-ghost" id="auditPrevBtn" ${auditState.page<=1?'disabled':''}>← Prev</button>
+      <span style="font-size:12.5px; color:var(--muted);">Page ${auditState.page} of ${totalPages}</span>
+      <button class="btn btn-sm btn-ghost" id="auditNextBtn" ${auditState.page>=totalPages?'disabled':''}>Next →</button>
+    `;
+    document.getElementById('auditPrevBtn')?.addEventListener('click', () => { if (auditState.page > 1){ auditState.page--; loadAuditPage(); } });
+    document.getElementById('auditNextBtn')?.addEventListener('click', () => { if (auditState.page < totalPages){ auditState.page++; loadAuditPage(); } });
+  } catch(err){
+    wrap.innerHTML = errorBannerHtml(err.message);
+    pager.innerHTML = '';
+  }
+}
+
+function auditActionBadge(action){
+  const a = (action||'').toUpperCase();
+  const cls = a === 'DELETE' ? 'pending' : a === 'CREATE' ? 'paid' : 'partial';
+  return `<span class="stamp ${cls}">${escapeHtml(action)}</span>`;
+}
+function eyeIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`; }
+
+async function openAuditDetailModal(logId){
+  openModal(`Audit log #${logId}`, `<div style="text-align:center; padding:24px 0;"><div class="spinner dark" style="margin:0 auto;"></div></div>`, `<button class="btn btn-ghost" id="cancelBtn">Close</button>`);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  try {
+    const res = await api(`/api/audit-logs/${logId}`);
+    const log = res.data;
+    const fmt = (v) => v == null ? '<span style="color:var(--muted);">—</span>' : `<pre style="white-space:pre-wrap; word-break:break-word; font-size:12px; margin:0;">${escapeHtml(JSON.stringify(v, null, 2))}</pre>`;
+    document.getElementById('modalBody').innerHTML = `
+      <div class="info-card">
+        <div class="info-row"><span class="info-label">When</span><span class="info-val">${dateFmt(log.created_at)}</span></div>
+        <div class="info-row"><span class="info-label">Actor</span><span class="info-val">${escapeHtml(log.user?.name || 'Unknown')} (${escapeHtml(log.user?.role || '')} · ${escapeHtml(log.user?.mobile || '')})</span></div>
+        <div class="info-row"><span class="info-label">Action</span><span class="info-val">${auditActionBadge(log.action)}</span></div>
+        <div class="info-row"><span class="info-label">Table</span><span class="info-val mono">${escapeHtml(log.table_name || '—')}</span></div>
+        <div class="info-row"><span class="info-label">Record ID</span><span class="info-val mono">${log.record_id ?? '—'}</span></div>
+      </div>
+      <h4 style="font-size:13px; margin:16px 0 6px;">Before</h4>
+      <div class="card card-pad" style="background:var(--paper);">${fmt(log.old_data)}</div>
+      <h4 style="font-size:13px; margin:16px 0 6px;">After</h4>
+      <div class="card card-pad" style="background:var(--paper);">${fmt(log.new_data)}</div>
+    `;
+  } catch(err){
+    document.getElementById('modalBody').innerHTML = errorBannerHtml(err.message);
+  }
+}
+
+/* ================================================================
    DEPOSITS VIEW
    ================================================================ */
 async function depositsView(){
   const [complexes, users] = await Promise.all([ensureLoaded('complexes','/api/complex'), ensureLoaded('users','/api/user')]);
   let deposits = [];
   try { deposits = await api('/api/deposit-payment'); } catch(e){}
+  state.cache.deposits = deposits;
   const userName = (id) => users.find(u=>u.id===id)?.name || `#${id}`;
 
   return `
@@ -2174,7 +2577,7 @@ async function depositsView(){
   ${deposits.length === 0 ? emptyStateHtml('No deposit payments', 'Record the first deposit payment using the button above.', emptyIcon()) : `
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Tenant</th><th>Shop</th><th>Complex</th><th class="num">Amount</th><th>Date</th><th>Remarks</th></tr></thead>
+      <thead><tr><th>Tenant</th><th>Shop</th><th>Complex</th><th class="num">Amount</th><th>Date</th><th>Remarks</th><th></th></tr></thead>
       <tbody>
         ${deposits.map(d=>`
           <tr data-search="${escapeHtml((d.user_name||'')+' '+(d.shop_number||'')+' '+(d.complex_name||''))}">
@@ -2184,13 +2587,94 @@ async function depositsView(){
             <td class="num">${currency(d.amount)}</td>
             <td>${dateFmt(d.payment_date)}</td>
             <td>${escapeHtml(d.remarks||'—')}</td>
+            <td><div class="row-actions">
+              <button class="btn-icon" data-edit-deposit="${d.id}" aria-label="Edit deposit payment">${editIcon()}</button>
+              <button class="btn-icon" data-delete-deposit="${d.id}" aria-label="Delete deposit payment">${trashIcon()}</button>
+            </div></td>
           </tr>`).join('')}
       </tbody>
     </table>
   </div>`}`;
 }
 
-function attachDepositHandlers(){}
+function attachDepositHandlers(){
+  document.querySelectorAll('[data-edit-deposit]').forEach(btn => btn.addEventListener('click', () => openEditDepositModal(Number(btn.dataset.editDeposit))));
+  document.querySelectorAll('[data-delete-deposit]').forEach(btn => btn.addEventListener('click', () => {
+    const dp = (state.cache.deposits || []).find(x => x.id === Number(btn.dataset.deleteDeposit));
+    if (dp) confirmDeleteDeposit(dp);
+  }));
+}
+
+/* ---- Edit / delete a single deposit payment ---- */
+function openEditDepositModal(dpId){
+  const dp = (state.cache.deposits || []).find(d => d.id === dpId);
+  if (!dp){ showToast('Deposit payment not found', 'error'); return; }
+  const dateVal = dp.payment_date ? new Date(dp.payment_date).toISOString().slice(0,10) : '';
+
+  openModal(`Edit deposit payment${dp.shop_number ? ' — ' + escapeHtml(dp.shop_number) : ''}`, `
+    <form id="depositEditForm">
+      <div class="form-grid">
+        <div class="field">
+          <label for="edAmount">Amount (₹)</label>
+          <input id="edAmount" type="number" step="0.01" min="0.01" value="${Number(dp.amount).toFixed(2)}">
+          ${fieldErrorHtml('edAmountErr')}
+        </div>
+        <div class="field">
+          <label for="edDate">Payment date</label>
+          <input id="edDate" type="date" value="${dateVal}">
+        </div>
+        <div class="field full">
+          <label for="edRemarks">Remarks</label>
+          <input id="edRemarks" value="${escapeHtml(dp.remarks || '')}" placeholder="Optional">
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">Total deposit paid for this tenant/shop (including this record) can't exceed the shop's required deposit.</div>
+    </form>
+  `, `
+    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+    <button class="btn btn-danger-ghost" id="deleteDepositBtn" style="margin-right:auto;">Delete deposit</button>
+    <button class="btn btn-primary" id="saveBtn">Save changes</button>
+  `);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('deleteDepositBtn').addEventListener('click', () => confirmDeleteDeposit(dp));
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const form = document.getElementById('depositEditForm');
+    clearFieldErrors(form);
+    const amount = parseFloat(document.getElementById('edAmount').value);
+    const dateStr = document.getElementById('edDate').value;
+    const remarks = document.getElementById('edRemarks').value.trim();
+    if (isNaN(amount) || amount <= 0){ showFieldError('edAmountErr','Enter a valid amount'); document.getElementById('edAmount').classList.add('invalid'); return; }
+
+    await withSavingState('saveBtn', async () => {
+      await api(`/api/deposit-payment/${dp.id}`, { method:'PUT', body:{
+        amount, remarks,
+        payment_date: dateStr ? new Date(dateStr).toISOString() : undefined,
+      }});
+      closeModal();
+      showToast('Deposit payment updated', 'success');
+      await renderView('deposits');
+    });
+  });
+}
+
+function confirmDeleteDeposit(dp){
+  openModal('Delete deposit payment', `
+    <div class="confirm-body">Are you sure you want to delete this deposit payment of <strong>${currency(dp.amount)}</strong>${dp.user_name ? ` for <strong>${escapeHtml(dp.user_name)}</strong>` : ''}? This can't be undone.</div>
+  `, `
+    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+    <button class="btn btn-danger-ghost" id="confirmDeleteBtn">Delete</button>
+  `);
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    await withSavingState('confirmDeleteBtn', async () => {
+      await api(`/api/deposit-payment/${dp.id}`, { method:'DELETE' });
+      closeModal();
+      showToast('Deposit payment deleted', 'success');
+      await renderView('deposits');
+    }, 'Deleting…');
+  });
+}
 
 /* ---- Deposit Payment Modal ---- */
 async function openDepositModal(){

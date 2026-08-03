@@ -371,12 +371,10 @@ async function loadTenantPortal(){
     const paidTotal = payments.reduce((s,p)=>s+Number(p.amount||0),0);
     const nextDue = pendingBills.filter(b=>b.due_date).sort((a,b)=>new Date(a.due_date)-new Date(b.due_date))[0];
 
-    const complexIds = [...new Set(shops.map(s=>s.complex_id).filter(Boolean))];
+    // Complex names come straight from /api/tenant/shops (complex_name per shop) —
+    // /api/complex itself is admin-only and would 403 for a tenant.
     const complexNames = {};
-    try {
-      const cx = await api('/api/complex');
-      cx.forEach(c => complexNames[c.id] = c.name);
-    } catch(e){}
+    shops.forEach(s => { if (s.complex_id) complexNames[s.complex_id] = s.complex_name; });
 
     let depositPaid = 0;
     let depositRemaining = totalDeposit;
