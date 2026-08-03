@@ -15,7 +15,7 @@ const state = {
   loaded: { complexes:false, shops:false, users:false, bills:false, payments:false },
   billing: {
     filters: { status: [], complexIds: [], typeSet: [], years: [], months: [], search: '' },
-    nav: { complexId: null, userId: null, year: null, month: null, tab: 'bills' },
+    nav: { mode: 'tenant', complexId: null, userId: null, year: null, month: null, tab: 'bills' },
     sort: 'newest',
   },
 };
@@ -163,7 +163,7 @@ const viewMeta = {
   complexes: { title:'Complexes', crumb:'Buildings and properties you manage', action:'Add complex' },
   shops:     { title:'Shops', crumb:'Units across all complexes', action:'Add shop' },
   users:     { title:'Users', crumb:'Admins and tenants', action:'Add user' },
-  billing:   { title:'Bills & Payments', crumb:'Charges and payments, grouped by complex and tenant', action:null },
+  billing:   { title:'Bills & Payments', crumb:'Charges and payments, browsed tenant-wise or property-wise', action:null },
   finance:   { title:'Tenant View', crumb:'Full tenant dashboard – bills, payments, deposit status', action:null },
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
   reports:   { title:'Reports', crumb:'Occupancy, collections and outstanding dues', action:null },
@@ -1019,18 +1019,44 @@ function billingFilteredListHtml(bills){
   </div>`;
 }
 
+function billingModeSwitcherHtml(){
+  const nav = state.billing.nav;
+  if (nav.complexId || nav.userId) return '';
+  const mode = nav.mode || 'tenant';
+  return `
+  <div class="billing-mode-switch">
+    <button type="button" class="billing-mode-btn ${mode==='tenant'?'active':''}" data-billing-mode="tenant">Tenant wise</button>
+    <button type="button" class="billing-mode-btn ${mode==='property'?'active':''}" data-billing-mode="property">Property wise</button>
+  </div>`;
+}
+
 function billingBreadcrumbHtml(){
   const nav = state.billing.nav;
   const complexes = state.cache.complexes;
   const users = state.cache.users;
-  const parts = [`<button type="button" class="billing-crumb-seg" data-crumb="complex">All complexes</button>`];
-  if (nav.complexId){
-    const cName = nav.complexId === 'null' ? 'Unassigned' : (complexes.find(c=>String(c.id)===String(nav.complexId))?.name || nav.complexId);
-    parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="tenant">${escapeHtml(cName)}</button>`);
-  }
-  if (nav.userId){
-    const u = users.find(x=>x.id===Number(nav.userId));
-    parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="year">${escapeHtml(u?.name || ('#'+nav.userId))}</button>`);
+  const mode = nav.mode || 'tenant';
+  const parts = [];
+
+  if (mode === 'tenant'){
+    parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="root">All tenants</button>`);
+    if (nav.userId){
+      const u = users.find(x=>x.id===Number(nav.userId));
+      parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="property">${escapeHtml(u?.name || ('#'+nav.userId))}</button>`);
+    }
+    if (nav.complexId){
+      const cName = nav.complexId === 'null' ? 'Unassigned' : (complexes.find(c=>String(c.id)===String(nav.complexId))?.name || nav.complexId);
+      parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="year">${escapeHtml(cName)}</button>`);
+    }
+  } else {
+    parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="root">All properties</button>`);
+    if (nav.complexId){
+      const cName = nav.complexId === 'null' ? 'Unassigned' : (complexes.find(c=>String(c.id)===String(nav.complexId))?.name || nav.complexId);
+      parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="property">${escapeHtml(cName)}</button>`);
+    }
+    if (nav.userId){
+      const u = users.find(x=>x.id===Number(nav.userId));
+      parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="year">${escapeHtml(u?.name || ('#'+nav.userId))}</button>`);
+    }
   }
   if (nav.year){
     parts.push(`<button type="button" class="billing-crumb-seg" data-crumb="month">${nav.year}</button>`);
@@ -1041,95 +1067,189 @@ function billingBreadcrumbHtml(){
   return `<div class="billing-breadcrumb">${parts.join('<span class="billing-crumb-sep">›</span>')}</div>`;
 }
 
-function billingBrowseHtml(allBills){
-  const nav = state.billing.nav;
+function billingComplexPickHtml(allBills){
   const complexes = state.cache.complexes;
   const shops = state.cache.shops;
+  const groups = complexes.map(c => {
+    const cBills = allBills.filter(b => b.complexId === c.id);
+    const tenantIds = new Set(shops.filter(s=>s.complex_id===c.id && s.assigned_to).map(s=>s.assigned_to.id));
+    const pending = cBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+    const collected = cBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    return { id:c.id, name:c.name, tenantCount:tenantIds.size, pending, collected, billCount:cBills.length };
+  });
+  const unassignedBills = allBills.filter(b => b.complexId == null);
+  if (unassignedBills.length){
+    const tenantIds = new Set(unassignedBills.map(b=>b.user_id));
+    groups.push({
+      id:'null', name:'Unassigned', tenantCount:tenantIds.size,
+      pending: unassignedBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0),
+      collected: unassignedBills.reduce((s,b)=>s+Number(b.paid_amount||0),0),
+      billCount: unassignedBills.length,
+    });
+  }
+  if (groups.length === 0){
+    return emptyStateHtml('No complexes yet', 'Add a complex and assign shops to start billing.', emptyIcon());
+  }
+  return `
+  <div class="billing-card-grid">
+    ${groups.map(g => `
+    <button type="button" class="card complex-stat-card billing-pick-card" data-drill-complex="${g.id}">
+      <div class="c-name">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
+        ${escapeHtml(g.name)}
+      </div>
+      <div class="complex-stat-grid">
+        <div class="complex-stat-item"><div class="csi-val">${g.tenantCount}</div><div class="csi-label">Tenants</div></div>
+        <div class="complex-stat-item"><div class="csi-val">${g.billCount}</div><div class="csi-label">Bills</div></div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);">
+        <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Collected</div><div style="font-family:var(--font-mono); font-weight:700; color:var(--green-deep); font-size:14px;">${currency(g.collected)}</div></div>
+        <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Pending</div><div style="font-family:var(--font-mono); font-weight:700; color:${g.pending>0?'var(--rust)':'var(--success)'}; font-size:14px;">${currency(g.pending)}</div></div>
+      </div>
+    </button>`).join('')}
+  </div>`;
+}
+
+function billingTenantPickForComplexHtml(allBills, complexIdVal){
+  const shops = state.cache.shops;
   const users = state.cache.users;
+  const complexBills = allBills.filter(b => b.complexId === complexIdVal);
+  const tenantIds = new Set(complexBills.map(b=>b.user_id));
+  if (complexIdVal != null){
+    shops.filter(s=>s.complex_id===complexIdVal && s.assigned_to).forEach(s=>tenantIds.add(s.assigned_to.id));
+  }
+  const rows = [...tenantIds].map(uid => {
+    const u = users.find(x=>x.id===uid);
+    const uBills = complexBills.filter(b=>b.user_id===uid);
+    const pending = uBills.filter(b=>b.status==='pending').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+    const partial = uBills.filter(b=>b.status==='partial').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+    const paid = uBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    return { id:uid, name: u?.name || `#${uid}`, mobile: u?.mobile || '', billCount: uBills.length, pending, partial, paid };
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+
+  if (rows.length === 0){
+    return emptyStateHtml('No tenants here yet', 'Assign shops in this complex to a tenant to start billing them.', emptyIcon());
+  }
+  return `
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tenant</th><th class="num">Bills</th><th class="num">Pending</th><th class="num">Partial</th><th class="num">Paid</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(r => `
+        <tr class="billing-pick-row" data-drill-user="${r.id}">
+          <td><strong>${escapeHtml(r.name)}</strong><div class="mono" style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
+          <td class="num">${r.billCount}</td>
+          <td class="num" style="color:${r.pending>0?'var(--rust)':'inherit'};">${currency(r.pending)}</td>
+          <td class="num" style="color:${r.partial>0?'var(--partial)':'inherit'};">${currency(r.partial)}</td>
+          <td class="num" style="color:var(--green-deep);">${currency(r.paid)}</td>
+          <td class="billing-open-link">Open →</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function billingTenantPickHtml(allBills){
+  const shops = state.cache.shops;
+  const users = state.cache.users;
+  const tenantIds = new Set(allBills.map(b=>b.user_id));
+  shops.filter(s=>s.assigned_to).forEach(s=>tenantIds.add(s.assigned_to.id));
+  const rows = [...tenantIds].map(uid => {
+    const u = users.find(x=>x.id===uid);
+    const uBills = allBills.filter(b=>b.user_id===uid);
+    const billed = uBills.reduce((s,b)=>s+Number(b.amount||0),0);
+    const received = uBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    const pending = billed - received;
+    const propertyIds = new Set(uBills.map(b=>b.complexId));
+    shops.filter(s=>s.assigned_to && s.assigned_to.id===uid).forEach(s=>propertyIds.add(s.complex_id ?? null));
+    return { id:uid, name: u?.name || `#${uid}`, mobile: u?.mobile || '', billCount: uBills.length, propertyCount: propertyIds.size, billed, received, pending };
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+
+  if (rows.length === 0){
+    return emptyStateHtml('No tenants yet', 'Assign shops to a tenant to start billing them.', emptyIcon());
+  }
+  return `
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tenant</th><th class="num">Properties</th><th class="num">Bills</th><th class="num">Billed</th><th class="num">Received</th><th class="num">Pending</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(r => `
+        <tr class="billing-pick-row" data-drill-user="${r.id}">
+          <td><strong>${escapeHtml(r.name)}</strong><div class="mono" style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
+          <td class="num">${r.propertyCount}</td>
+          <td class="num">${r.billCount}</td>
+          <td class="num">${currency(r.billed)}</td>
+          <td class="num" style="color:var(--green-deep);">${currency(r.received)}</td>
+          <td class="num" style="color:${r.pending>0?'var(--rust)':'inherit'};">${currency(r.pending)}</td>
+          <td class="billing-open-link">Open →</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function billingPropertyPickHtml(allBills, userIdVal){
+  const complexes = state.cache.complexes;
+  const shops = state.cache.shops;
+  const userBills = allBills.filter(b=>b.user_id===userIdVal);
+  const propertyIds = new Set(userBills.map(b=>b.complexId));
+  shops.filter(s=>s.assigned_to && s.assigned_to.id===userIdVal).forEach(s=>propertyIds.add(s.complex_id ?? null));
+
+  const groups = [...propertyIds].map(cid => {
+    const cBills = userBills.filter(b=>b.complexId===cid);
+    const billed = cBills.reduce((s,b)=>s+Number(b.amount||0),0);
+    const received = cBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    const pending = billed - received;
+    const name = cid==null ? 'Unassigned' : (complexes.find(c=>c.id===cid)?.name || `#${cid}`);
+    return { id: cid==null?'null':cid, name, billed, received, pending, billCount: cBills.length };
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+
+  if (groups.length === 0){
+    return emptyStateHtml('No properties for this tenant yet', 'Assign a shop to this tenant to start billing them.', emptyIcon());
+  }
+  return `
+  <div class="billing-card-grid">
+    ${groups.map(g => `
+    <button type="button" class="card complex-stat-card billing-pick-card" data-drill-property="${g.id}">
+      <div class="c-name">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
+        ${escapeHtml(g.name)}
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">${g.billCount} bill${g.billCount!==1?'s':''}</div>
+      <div class="billing-stat-line"><span>Billed</span><strong>${currency(g.billed)}</strong></div>
+      <div class="billing-stat-line"><span>Received</span><strong style="color:var(--green-deep);">${currency(g.received)}</strong></div>
+      <div class="billing-stat-line"><span>Pending</span><strong style="color:${g.pending>0?'var(--rust)':'var(--success)'};">${currency(g.pending)}</strong></div>
+    </button>`).join('')}
+  </div>`;
+}
+
+function billingBrowseHtml(allBills){
+  const nav = state.billing.nav;
+  const users = state.cache.users;
+  const mode = nav.mode || 'tenant';
+  const modeSwitcher = billingModeSwitcherHtml();
   const crumb = billingBreadcrumbHtml();
 
-  if (!nav.complexId){
-    const groups = complexes.map(c => {
-      const cBills = allBills.filter(b => b.complexId === c.id);
-      const tenantIds = new Set(shops.filter(s=>s.complex_id===c.id && s.assigned_to).map(s=>s.assigned_to.id));
-      const pending = cBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0);
-      const collected = cBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
-      return { id:c.id, name:c.name, tenantCount:tenantIds.size, pending, collected, billCount:cBills.length };
-    });
-    const unassignedBills = allBills.filter(b => b.complexId == null);
-    if (unassignedBills.length){
-      const tenantIds = new Set(unassignedBills.map(b=>b.user_id));
-      groups.push({
-        id:'null', name:'Unassigned', tenantCount:tenantIds.size,
-        pending: unassignedBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0),
-        collected: unassignedBills.reduce((s,b)=>s+Number(b.paid_amount||0),0),
-        billCount: unassignedBills.length,
-      });
+  if (mode === 'tenant'){
+    if (!nav.userId){
+      return modeSwitcher + crumb + billingTenantPickHtml(allBills);
     }
-    if (groups.length === 0){
-      return crumb + emptyStateHtml('No complexes yet', 'Add a complex and assign shops to start billing.', emptyIcon());
+    if (!nav.complexId){
+      return modeSwitcher + crumb + billingPropertyPickHtml(allBills, Number(nav.userId));
     }
-    return crumb + `
-    <div class="billing-card-grid">
-      ${groups.map(g => `
-      <button type="button" class="card complex-stat-card billing-pick-card" data-drill-complex="${g.id}">
-        <div class="c-name">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
-          ${escapeHtml(g.name)}
-        </div>
-        <div class="complex-stat-grid">
-          <div class="complex-stat-item"><div class="csi-val">${g.tenantCount}</div><div class="csi-label">Tenants</div></div>
-          <div class="complex-stat-item"><div class="csi-val">${g.billCount}</div><div class="csi-label">Bills</div></div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);">
-          <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Collected</div><div style="font-family:var(--font-mono); font-weight:700; color:var(--green-deep); font-size:14px;">${currency(g.collected)}</div></div>
-          <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Pending</div><div style="font-family:var(--font-mono); font-weight:700; color:${g.pending>0?'var(--rust)':'var(--success)'}; font-size:14px;">${currency(g.pending)}</div></div>
-        </div>
-      </button>`).join('')}
-    </div>`;
+  } else {
+    if (!nav.complexId){
+      return modeSwitcher + crumb + billingComplexPickHtml(allBills);
+    }
+    if (!nav.userId){
+      const complexIdVal = nav.complexId === 'null' ? null : Number(nav.complexId);
+      return modeSwitcher + crumb + billingTenantPickForComplexHtml(allBills, complexIdVal);
+    }
   }
 
   const complexIdVal = nav.complexId === 'null' ? null : Number(nav.complexId);
-  const complexBills = allBills.filter(b => b.complexId === complexIdVal);
-
-  if (!nav.userId){
-    const tenantIds = new Set(complexBills.map(b=>b.user_id));
-    if (complexIdVal != null){
-      shops.filter(s=>s.complex_id===complexIdVal && s.assigned_to).forEach(s=>tenantIds.add(s.assigned_to.id));
-    }
-    const rows = [...tenantIds].map(uid => {
-      const u = users.find(x=>x.id===uid);
-      const uBills = complexBills.filter(b=>b.user_id===uid);
-      const pending = uBills.filter(b=>b.status==='pending').reduce((s,b)=>s+Number(b.pending_amount||0),0);
-      const partial = uBills.filter(b=>b.status==='partial').reduce((s,b)=>s+Number(b.pending_amount||0),0);
-      const paid = uBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
-      return { id:uid, name: u?.name || `#${uid}`, mobile: u?.mobile || '', billCount: uBills.length, pending, partial, paid };
-    }).sort((a,b)=>a.name.localeCompare(b.name));
-
-    if (rows.length === 0){
-      return crumb + emptyStateHtml('No tenants here yet', 'Assign shops in this complex to a tenant to start billing them.', emptyIcon());
-    }
-    return crumb + `
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Tenant</th><th class="num">Bills</th><th class="num">Pending</th><th class="num">Partial</th><th class="num">Paid</th><th></th></tr></thead>
-        <tbody>
-          ${rows.map(r => `
-          <tr class="billing-pick-row" data-drill-user="${r.id}">
-            <td><strong>${escapeHtml(r.name)}</strong><div class="mono" style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
-            <td class="num">${r.billCount}</td>
-            <td class="num" style="color:${r.pending>0?'var(--rust)':'inherit'};">${currency(r.pending)}</td>
-            <td class="num" style="color:${r.partial>0?'var(--partial)':'inherit'};">${currency(r.partial)}</td>
-            <td class="num" style="color:var(--green-deep);">${currency(r.paid)}</td>
-            <td class="billing-open-link">Open →</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
-  }
-
   const userIdVal = Number(nav.userId);
-  const tenantBills = complexBills.filter(b => b.user_id === userIdVal);
+  const tenantBills = allBills.filter(b => b.complexId === complexIdVal && b.user_id === userIdVal);
   const tenant = users.find(u=>u.id===userIdVal);
 
   if (!nav.year){
@@ -1297,8 +1417,21 @@ function billingPaymentsByDateHtml(mPayments){
 }
 
 function attachBillingResultHandlers(){
+  document.querySelectorAll('[data-billing-mode]').forEach(el => el.addEventListener('click', () => {
+    const mode = el.dataset.billingMode;
+    if (mode === (state.billing.nav.mode || 'tenant')) return;
+    state.billing.nav = { mode, complexId:null, userId:null, year:null, month:null, tab:'bills' };
+    renderBillingResults();
+  }));
   document.querySelectorAll('[data-drill-complex]').forEach(el => el.addEventListener('click', () => {
-    state.billing.nav = { complexId: el.dataset.drillComplex, userId:null, year:null, month:null, tab:'bills' };
+    state.billing.nav = { mode: state.billing.nav.mode, complexId: el.dataset.drillComplex, userId:null, year:null, month:null, tab:'bills' };
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-drill-property]').forEach(el => el.addEventListener('click', () => {
+    state.billing.nav.complexId = el.dataset.drillProperty;
+    state.billing.nav.year = null;
+    state.billing.nav.month = null;
+    state.billing.nav.tab = 'bills';
     renderBillingResults();
   }));
   document.querySelectorAll('[data-drill-user]').forEach(el => el.addEventListener('click', () => {
@@ -1326,8 +1459,12 @@ function attachBillingResultHandlers(){
   }));
   document.querySelectorAll('[data-crumb]').forEach(el => el.addEventListener('click', () => {
     const level = el.dataset.crumb;
-    if (level === 'complex') state.billing.nav = { complexId:null, userId:null, year:null, month:null, tab:'bills' };
-    else if (level === 'tenant') state.billing.nav = { ...state.billing.nav, userId:null, year:null, month:null, tab:'bills' };
+    const mode = state.billing.nav.mode || 'tenant';
+    if (level === 'root') state.billing.nav = { mode, complexId:null, userId:null, year:null, month:null, tab:'bills' };
+    else if (level === 'property'){
+      if (mode === 'tenant') state.billing.nav = { ...state.billing.nav, complexId:null, year:null, month:null, tab:'bills' };
+      else state.billing.nav = { ...state.billing.nav, userId:null, year:null, month:null, tab:'bills' };
+    }
     else if (level === 'year') state.billing.nav = { ...state.billing.nav, year:null, month:null, tab:'bills' };
     else if (level === 'month') state.billing.nav = { ...state.billing.nav, month:null, tab:'bills' };
     renderBillingResults();
