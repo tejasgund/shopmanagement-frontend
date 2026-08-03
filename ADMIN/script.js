@@ -15,7 +15,7 @@ const state = {
   loaded: { complexes:false, shops:false, users:false, bills:false, payments:false },
   billing: {
     filters: { status: [], complexIds: [], typeSet: [], years: [], months: [], search: '' },
-    nav: { complexId: null, userId: null, year: null, month: null },
+    nav: { complexId: null, userId: null, year: null, month: null, tab: 'bills' },
     sort: 'newest',
   },
 };
@@ -1145,12 +1145,16 @@ function billingBrowseHtml(allBills){
     <div class="billing-card-grid billing-year-grid">
       ${yrs.map(y => {
         const yBills = tenantBills.filter(b=>b.year===y);
-        const pending = yBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+        const billed = yBills.reduce((s,b)=>s+Number(b.amount||0),0);
+        const received = yBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+        const remaining = billed - received;
         return `
         <button type="button" class="card billing-pick-card billing-year-card" data-drill-year="${y}">
           <div class="billing-year-num">${y}</div>
-          <div style="font-size:12px; color:var(--muted);">${yBills.length} bill${yBills.length!==1?'s':''}</div>
-          <div style="font-family:var(--font-mono); font-weight:700; font-size:14px; margin-top:4px; color:${pending>0?'var(--rust)':'var(--success)'};">${currency(pending)} pending</div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">${yBills.length} bill${yBills.length!==1?'s':''}</div>
+          <div class="billing-stat-line"><span>Billed</span><strong>${currency(billed)}</strong></div>
+          <div class="billing-stat-line"><span>Received</span><strong style="color:var(--green-deep);">${currency(received)}</strong></div>
+          <div class="billing-stat-line"><span>Remaining</span><strong style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></div>
         </button>`;
       }).join('')}
     </div>`;
@@ -1162,14 +1166,18 @@ function billingBrowseHtml(allBills){
   const monthCards = MONTH_NAMES.map((name, i) => {
     const m = i+1;
     const mBills = yearBills.filter(b=>b.month===m);
-    const pending = mBills.filter(b=>b.status!=='paid').reduce((s,b)=>s+Number(b.pending_amount||0),0);
+    const billed = mBills.reduce((s,b)=>s+Number(b.amount||0),0);
+    const received = mBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    const remaining = billed - received;
     const selected = nav.month === m;
     return `
     <button type="button" class="card billing-pick-card billing-month-card ${selected?'selected':''} ${mBills.length===0?'empty':''}" data-drill-month="${m}">
       <div class="billing-month-name">${name}</div>
       ${mBills.length ? `
-      <div style="font-size:12px; color:var(--muted);">${mBills.length} bill${mBills.length!==1?'s':''}</div>
-      <div style="font-family:var(--font-mono); font-weight:700; font-size:13px; color:${pending>0?'var(--rust)':'var(--success)'};">${currency(pending)}</div>
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">${mBills.length} bill${mBills.length!==1?'s':''}</div>
+      <div class="billing-stat-line small"><span>Billed</span><strong>${currency(billed)}</strong></div>
+      <div class="billing-stat-line small"><span>Recv</span><strong style="color:var(--green-deep);">${currency(received)}</strong></div>
+      <div class="billing-stat-line small"><span>Rem</span><strong style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></div>
       ` : `<div style="font-size:12px; color:var(--muted);">—</div>`}
     </button>`;
   }).join('');
@@ -1177,13 +1185,53 @@ function billingBrowseHtml(allBills){
   let detail = '';
   if (nav.month){
     const mBills = yearBills.filter(b=>b.month===nav.month).sort((a,b)=>new Date(b.bill_date)-new Date(a.bill_date));
+    const mPayments = mBills.flatMap(b => b.payments.map(p => ({ ...p, bill: b })));
+    const billed = mBills.reduce((s,b)=>s+Number(b.amount||0),0);
+    const received = mBills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    const remaining = billed - received;
+    const tab = nav.tab === 'payments' ? 'payments' : 'bills';
+
     detail = `
     <div class="billing-month-detail">
       <div class="billing-inline-actions">
         <button class="btn btn-primary btn-sm" data-add-bill-for="${userIdVal}">+ Add bill</button>
         <button class="btn btn-ghost btn-sm" data-record-payment-for="${userIdVal}">Record payment</button>
       </div>
-      ${mBills.length === 0 ? emptyStateHtml('No bills this month', 'Use "+ Add bill" to create one.', emptyIcon()) : mBills.map(b => `
+      <div class="billing-month-summary">
+        <div class="billing-stat-line"><span>Billed</span><strong>${currency(billed)}</strong></div>
+        <div class="billing-stat-line"><span>Received</span><strong style="color:var(--green-deep);">${currency(received)}</strong></div>
+        <div class="billing-stat-line"><span>Remaining</span><strong style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></div>
+      </div>
+      <div class="billing-tab-bar">
+        <button type="button" class="billing-tab-btn ${tab==='bills'?'active':''}" data-billing-tab="bills">Bills <span class="billing-tab-count">${mBills.length}</span></button>
+        <button type="button" class="billing-tab-btn ${tab==='payments'?'active':''}" data-billing-tab="payments">Payments <span class="billing-tab-count">${mPayments.length}</span></button>
+      </div>
+      ${tab === 'bills' ? billingBillsByTypeHtml(mBills) : billingPaymentsByDateHtml(mPayments)}
+    </div>`;
+  }
+
+  return crumb + `<div class="billing-card-grid billing-month-grid">${monthCards}</div>` + detail;
+}
+
+function billingBillsByTypeHtml(mBills){
+  if (mBills.length === 0) return emptyStateHtml('No bills this month', 'Use "+ Add bill" to create one.', emptyIcon());
+  const types = [...new Set(mBills.map(b=>b.bill_type))].sort();
+  return types.map(type => {
+    const bills = mBills.filter(b=>b.bill_type===type);
+    const billed = bills.reduce((s,b)=>s+Number(b.amount||0),0);
+    const received = bills.reduce((s,b)=>s+Number(b.paid_amount||0),0);
+    const remaining = billed - received;
+    return `
+    <div class="billing-group">
+      <div class="billing-group-header">
+        <span>${escapeHtml(type)} <span class="billing-group-count">(${bills.length})</span></span>
+        <span class="billing-group-totals">
+          <span>Billed <strong class="mono">${currency(billed)}</strong></span>
+          <span>Recv <strong class="mono" style="color:var(--green-deep);">${currency(received)}</strong></span>
+          <span>Rem <strong class="mono" style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></span>
+        </span>
+      </div>
+      ${bills.map(b => `
       <div class="billing-bill-card">
         <div class="billing-bill-head">
           <div>
@@ -1201,18 +1249,6 @@ function billingBrowseHtml(allBills){
           <span>Paid: ${currency(b.paid_amount)}</span>
           <span>Pending: ${currency(b.pending_amount)}</span>
         </div>
-        ${b.payments.length ? `
-        <div class="billing-payments-list">
-          ${b.payments.map(p => `
-          <div class="billing-payment-row">
-            <span>${dateFmt(p.payment_date)} · ${escapeHtml(p.payment_method)}</span>
-            <span class="mono">${currency(p.amount)}</span>
-            <span class="row-actions">
-              <button class="btn-icon" data-edit-payment="${p.id}" aria-label="Edit payment">${editIcon()}</button>
-              <button class="btn-icon" data-delete-payment="${p.id}" aria-label="Delete payment">${trashIcon()}</button>
-            </span>
-          </div>`).join('')}
-        </div>` : ''}
         <div class="row-actions" style="margin-top:8px;">
           ${b.status !== 'paid' ? `<button class="btn btn-ghost btn-sm" data-record-payment="${b.id}">Record payment</button>` : ''}
           <button class="btn-icon" data-edit-bill="${b.id}" aria-label="Edit bill">${editIcon()}</button>
@@ -1220,38 +1256,70 @@ function billingBrowseHtml(allBills){
         </div>
       </div>`).join('')}
     </div>`;
-  }
+  }).join('');
+}
 
-  return crumb + `<div class="billing-card-grid billing-month-grid">${monthCards}</div>` + detail;
+function billingPaymentsByDateHtml(mPayments){
+  if (mPayments.length === 0) return emptyStateHtml('No payments recorded for this month\'s bills', 'Use "Record payment" to add one.', emptyIcon());
+  const dateKeys = [...new Set(mPayments.map(p=>p.payment_date))].sort((a,b)=>new Date(b)-new Date(a));
+  return dateKeys.map(dateKey => {
+    const pays = mPayments.filter(p=>p.payment_date===dateKey).sort((a,b)=>b.id-a.id);
+    const total = pays.reduce((s,p)=>s+Number(p.amount||0),0);
+    return `
+    <div class="billing-group">
+      <div class="billing-group-header">
+        <span>${dateFmt(dateKey)} <span class="billing-group-count">(${pays.length})</span></span>
+        <span class="billing-group-totals"><strong class="mono" style="color:var(--green-deep);">${currency(total)}</strong></span>
+      </div>
+      <div class="billing-payments-list">
+        ${pays.map(p => `
+        <div class="billing-payment-row">
+          <span>${escapeHtml(p.payment_method)} · <span class="mono" style="color:var(--muted);">Bill #${p.bill.id} (${escapeHtml(p.bill.bill_type)})</span></span>
+          <span class="mono">${currency(p.amount)}</span>
+          <span class="row-actions">
+            <button class="btn-icon" data-edit-payment="${p.id}" aria-label="Edit payment">${editIcon()}</button>
+            <button class="btn-icon" data-delete-payment="${p.id}" aria-label="Delete payment">${trashIcon()}</button>
+          </span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function attachBillingResultHandlers(){
   document.querySelectorAll('[data-drill-complex]').forEach(el => el.addEventListener('click', () => {
-    state.billing.nav = { complexId: el.dataset.drillComplex, userId:null, year:null, month:null };
+    state.billing.nav = { complexId: el.dataset.drillComplex, userId:null, year:null, month:null, tab:'bills' };
     renderBillingResults();
   }));
   document.querySelectorAll('[data-drill-user]').forEach(el => el.addEventListener('click', () => {
     state.billing.nav.userId = el.dataset.drillUser;
     state.billing.nav.year = null;
     state.billing.nav.month = null;
+    state.billing.nav.tab = 'bills';
     renderBillingResults();
   }));
   document.querySelectorAll('[data-drill-year]').forEach(el => el.addEventListener('click', () => {
     state.billing.nav.year = el.dataset.drillYear;
     state.billing.nav.month = null;
+    state.billing.nav.tab = 'bills';
     renderBillingResults();
   }));
   document.querySelectorAll('[data-drill-month]').forEach(el => el.addEventListener('click', () => {
     const m = Number(el.dataset.drillMonth);
     state.billing.nav.month = state.billing.nav.month === m ? null : m;
+    state.billing.nav.tab = 'bills';
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-billing-tab]').forEach(el => el.addEventListener('click', () => {
+    state.billing.nav.tab = el.dataset.billingTab;
     renderBillingResults();
   }));
   document.querySelectorAll('[data-crumb]').forEach(el => el.addEventListener('click', () => {
     const level = el.dataset.crumb;
-    if (level === 'complex') state.billing.nav = { complexId:null, userId:null, year:null, month:null };
-    else if (level === 'tenant') state.billing.nav = { ...state.billing.nav, userId:null, year:null, month:null };
-    else if (level === 'year') state.billing.nav = { ...state.billing.nav, year:null, month:null };
-    else if (level === 'month') state.billing.nav = { ...state.billing.nav, month:null };
+    if (level === 'complex') state.billing.nav = { complexId:null, userId:null, year:null, month:null, tab:'bills' };
+    else if (level === 'tenant') state.billing.nav = { ...state.billing.nav, userId:null, year:null, month:null, tab:'bills' };
+    else if (level === 'year') state.billing.nav = { ...state.billing.nav, year:null, month:null, tab:'bills' };
+    else if (level === 'month') state.billing.nav = { ...state.billing.nav, month:null, tab:'bills' };
     renderBillingResults();
   }));
 

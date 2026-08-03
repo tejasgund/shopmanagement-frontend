@@ -582,7 +582,7 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 /* Card grids shared by complex / year / month levels */
 .billing-card-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; margin-bottom:18px; }
 .billing-year-grid{ grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
-.billing-month-grid{ grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+.billing-month-grid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
 .billing-pick-card{ text-align:left; cursor:pointer; width:100%; font-family:inherit; }
 .billing-year-card{ background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow-sm); transition:box-shadow .15s, border-color .15s; }
 .billing-year-card:hover{ box-shadow:var(--shadow-md); border-color:var(--green); }
@@ -607,6 +607,30 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .billing-bill-meta{ display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--muted); margin-top:8px; }
 .billing-payments-list{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); display:flex; flex-direction:column; gap:6px; }
 .billing-payment-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; }
+
+/* Year / month card stat lines */
+.billing-stat-line{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12.5px; padding:2px 0; }
+.billing-stat-line span{ color:var(--muted); }
+.billing-stat-line strong{ font-family:var(--font-mono); font-weight:700; }
+.billing-stat-line.small{ font-size:10.5px; padding:1px 0; }
+
+/* Month-detail summary strip */
+.billing-month-summary{ display:flex; gap:20px; flex-wrap:wrap; background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:14px; }
+.billing-month-summary .billing-stat-line{ flex-direction:row; gap:6px; padding:0; font-size:13px; }
+
+/* Bills / Payments tab switcher */
+.billing-tab-bar{ display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--line); }
+.billing-tab-btn{ background:none; border:none; border-bottom:2px solid transparent; padding:8px 4px; margin-right:14px; font-family:inherit; font-size:13.5px; font-weight:600; color:var(--muted); cursor:pointer; display:flex; align-items:center; gap:6px; }
+.billing-tab-btn:hover{ color:var(--ink); }
+.billing-tab-btn.active{ color:var(--ink); border-bottom-color:var(--green); }
+.billing-tab-count{ background:var(--paper-raised); border:1px solid var(--line); border-radius:999px; padding:1px 7px; font-size:11px; font-family:var(--font-mono); }
+
+/* Grouped bill-type / payment-date sections */
+.billing-group{ margin-bottom:18px; }
+.billing-group-header{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; font-weight:700; font-size:13.5px; padding:8px 2px; border-bottom:1px dashed var(--line); margin-bottom:10px; }
+.billing-group-count{ color:var(--muted); font-weight:500; }
+.billing-group-totals{ display:flex; gap:14px; font-size:12px; font-weight:500; color:var(--muted); }
+.billing-group-totals strong{ font-weight:700; color:var(--ink); }
 
 /* Finance page user card */
 .user-finance-card{ background:var(--paper-raised); border:1.5px solid var(--green); border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
