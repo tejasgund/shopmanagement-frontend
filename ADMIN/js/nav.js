@@ -21,6 +21,37 @@ sidebarScrim.addEventListener('click', closeSidebar);
 function closeSidebar(){ sidebar.classList.remove('open'); sidebarScrim.classList.remove('show'); }
 
 /* ================================================================
+   Sidebar icon-rail — whole sidebar collapses 260px -> 72px.
+   Independent of, and compatible with, the per-group collapse
+   below: while rail-collapsed, all groups render as a flat icon
+   list (CSS forces nav-group-body open) and each group's own
+   collapsed/expanded state is left untouched underneath, so it's
+   exactly as the admin left it once the rail expands again.
+   Desktop only — mobile sidebar is a plain open/closed drawer.
+   ================================================================ */
+const SIDEBAR_RAIL_KEY = 'tms_admin_sidebar_rail';
+const adminApp = document.getElementById('adminApp');
+const railToggleBtn = document.getElementById('sidebarRailToggle');
+
+function applyRailState(collapsed){
+  adminApp.classList.toggle('rail-collapsed', collapsed);
+  if (railToggleBtn) {
+    railToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    railToggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  }
+}
+(function initRailState(){
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(SIDEBAR_RAIL_KEY) === '1'; } catch (e) {}
+  applyRailState(collapsed);
+})();
+railToggleBtn?.addEventListener('click', () => {
+  const collapsed = !adminApp.classList.contains('rail-collapsed');
+  applyRailState(collapsed);
+  try { localStorage.setItem(SIDEBAR_RAIL_KEY, collapsed ? '1' : '0'); } catch (e) {}
+});
+
+/* ================================================================
    Sidebar module groups — expand/collapse (Property, People,
    Finance, Insights), persisted per browser via localStorage so it
    stays the way the admin left it next time they sign in.

@@ -29,7 +29,8 @@
   --shadow-md: 0 4px 16px rgba(21,32,27,0.10);
   --shadow-lg: 0 12px 32px rgba(21,32,27,0.16);
 
-  --sidebar-w: 248px;
+  --sidebar-w: 260px;
+  --sidebar-w-collapsed: 72px;
 }
 
 *{box-sizing:border-box;}
@@ -157,6 +158,7 @@ input,select,textarea{font-family:var(--font-body);}
 .sidebar{
   width:var(--sidebar-w); flex-shrink:0; background:var(--ink); color:var(--paper);
   display:flex; flex-direction:column; padding:22px 14px; position:fixed; top:0; left:0; bottom:0; overflow-y:auto;
+  transition:width .28s ease, box-shadow .28s ease;
 }
 .sidebar-mark{ display:flex; align-items:center; gap:10px; padding:0 8px 24px; }
 .sidebar-mark .stamp-mark{
@@ -215,7 +217,7 @@ input,select,textarea{font-family:var(--font-body);}
 }
 .logout-btn:hover{ border-color:var(--rust); color:#fff; background:rgba(192,97,43,0.15); }
 
-.main{ flex:1; margin-left:var(--sidebar-w); min-width:0; }
+.main{ flex:1; margin-left:var(--sidebar-w); min-width:0; transition:margin-left .28s ease; }
 .topbar{
   position:sticky; top:0; z-index:20; background:rgba(247,244,236,0.92); backdrop-filter:blur(8px);
   border-bottom:1px solid var(--line); padding:16px 28px; display:flex; align-items:center; justify-content:space-between; gap:16px;
@@ -821,3 +823,100 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 
 /* Wider modal variant, used for the full tenant statement */
 .modal.modal-wide{ max-width:920px; }
+
+/* ============================================================
+   COLLAPSIBLE ICON-RAIL SIDEBAR (260px expanded / 72px collapsed)
+   Desktop only — on mobile the sidebar stays a full off-canvas
+   drawer (see the existing max-width:900px block above), so all
+   of this is scoped to min-width:901px.
+   ============================================================ */
+.sidebar-rail-toggle{
+  margin-left:auto; flex-shrink:0; width:26px; height:26px; border-radius:7px;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:#C9CFC5;
+  cursor:pointer; transition:transform .28s ease, background .12s ease, color .12s ease, margin .28s ease;
+}
+.sidebar-rail-toggle:hover{ background:rgba(255,255,255,0.14); color:#fff; }
+.sidebar-rail-toggle:focus-visible{ outline:2px solid var(--green); outline-offset:2px; }
+
+/* Base transition setup for everything that fades/shrinks away when collapsed.
+   Uses opacity + max-width/max-height (never display:none) so it can animate. */
+.wordmark{ transition:opacity .2s ease, max-width .25s ease; opacity:1; max-width:200px; }
+.user-meta{ transition:opacity .2s ease, max-width .25s ease; opacity:1; max-width:160px; }
+.nav-label{ transition:max-height .25s ease, opacity .2s ease, padding .25s ease; max-height:34px; opacity:1; }
+.nav-collapse-all{ transition:max-height .25s ease, opacity .2s ease, padding .25s ease, margin .25s ease; max-height:40px; opacity:1; }
+.nav-item-label, .logout-btn-label{
+  display:inline-block; opacity:1; max-width:160px; overflow:hidden; white-space:nowrap;
+  transform:translateX(0);
+  transition:opacity .2s ease, max-width .25s ease, transform .2s ease, margin .2s ease;
+}
+.nav-item{ position:relative; }
+
+/* Floating tooltip — only ever shown while the sidebar is collapsed (see below) */
+.nav-item::after, .logout-btn::after{
+  content:attr(data-tooltip);
+  position:absolute; left:calc(100% + 14px); top:50%; transform:translateY(-50%) translateX(-4px);
+  background:var(--paper-raised); color:var(--ink); font-size:12.5px; font-weight:600; white-space:nowrap;
+  padding:6px 11px; border-radius:6px; box-shadow:var(--shadow-lg); border:1px solid var(--line);
+  opacity:0; pointer-events:none; transition:opacity .15s ease, transform .15s ease; z-index:400;
+}
+.logout-btn{ position:relative; }
+
+@media (min-width:901px){
+  #adminApp.rail-collapsed .sidebar{ width:var(--sidebar-w-collapsed); }
+  #adminApp.rail-collapsed .main{ margin-left:var(--sidebar-w-collapsed); }
+
+  #adminApp.rail-collapsed .sidebar-mark{ flex-direction:column; gap:12px; padding:0 0 20px; }
+  #adminApp.rail-collapsed .sidebar-rail-toggle{ margin-left:0; transform:rotate(180deg); }
+
+  #adminApp.rail-collapsed .wordmark{ opacity:0; max-width:0; }
+  #adminApp.rail-collapsed .user-meta{ opacity:0; max-width:0; }
+  #adminApp.rail-collapsed .nav-label{ max-height:0; opacity:0; padding-top:0; padding-bottom:0; pointer-events:none; overflow:hidden; }
+  #adminApp.rail-collapsed .nav-collapse-all{ max-height:0; opacity:0; padding-top:0; padding-bottom:0; margin-top:0; pointer-events:none; overflow:hidden; }
+  #adminApp.rail-collapsed .nav-item-label,
+  #adminApp.rail-collapsed .logout-btn-label{ opacity:0; max-width:0; margin:0; transform:translateX(-6px); }
+
+  /* All module groups stay open (flat icon list) while collapsed — per-group
+     collapse only makes sense once labels are visible again. */
+  #adminApp.rail-collapsed .nav-group.collapsed .nav-group-body{ display:block; }
+
+  /* Center icons, remove the label gap so icons sit centered in the 72px rail */
+  #adminApp.rail-collapsed .nav-item{ justify-content:center; gap:0; padding-left:0; padding-right:0; }
+  #adminApp.rail-collapsed .logout-btn{ gap:0; padding-left:9px; padding-right:9px; }
+  #adminApp.rail-collapsed .user-chip{ justify-content:center; padding-left:0; padding-right:0; }
+  #adminApp.rail-collapsed .nav-badge{ position:absolute; top:4px; right:16px; margin-left:0; font-size:9px; padding:1px 5px; min-width:15px; }
+
+  /* Tooltips — only relevant, and only shown, while collapsed */
+  #adminApp.rail-collapsed .nav-item:hover::after,
+  #adminApp.rail-collapsed .nav-item:focus-visible::after,
+  #adminApp.rail-collapsed .logout-btn:hover::after,
+  #adminApp.rail-collapsed .logout-btn:focus-visible::after{
+    opacity:1; transform:translateY(-50%) translateX(0);
+  }
+
+  /* Hover-peek: hovering the logo/toggle area temporarily widens the sidebar
+     back to full size (as an overlay — .main keeps its collapsed margin, so
+     nothing else on the page shifts) and reveals the real labels again. */
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover){
+    width:var(--sidebar-w); z-index:250; box-shadow:var(--shadow-lg);
+  }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .sidebar-mark{ flex-direction:row; gap:10px; padding:0 8px 24px; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .sidebar-rail-toggle{ margin-left:auto; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .wordmark{ opacity:1; max-width:200px; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .user-meta{ opacity:1; max-width:160px; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .nav-label{ max-height:34px; opacity:1; padding-top:14px; padding-bottom:6px; pointer-events:auto; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .nav-collapse-all{ max-height:40px; opacity:1; padding-top:8px; padding-bottom:8px; margin-top:6px; pointer-events:auto; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .nav-item-label,
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .logout-btn-label{ opacity:1; max-width:160px; transform:translateX(0); }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .nav-item{ justify-content:flex-start; gap:11px; padding-left:12px; padding-right:12px; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .logout-btn{ gap:7px; padding-left:9px; padding-right:9px; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .user-chip{ justify-content:flex-start; padding-left:10px; padding-right:10px; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .nav-badge{ position:static; margin-left:auto; font-size:10.5px; padding:1px 6px; min-width:18px; }
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .nav-item::after,
+  #adminApp.rail-collapsed .sidebar:has(.sidebar-mark:hover) .logout-btn::after{ opacity:0 !important; }
+}
+
+/* Rail toggle only makes sense on desktop — mobile sidebar is fully open or closed */
+@media (max-width:900px){
+  .sidebar-rail-toggle{ display:none; }
+}
