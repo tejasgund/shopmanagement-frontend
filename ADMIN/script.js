@@ -163,7 +163,7 @@ const viewMeta = {
   complexes: { title:'Complexes', crumb:'Buildings and properties you manage', action:'Add complex' },
   shops:     { title:'Shops', crumb:'Units across all complexes', action:'Add shop' },
   users:     { title:'Users', crumb:'Admins and tenants', action:'Add user' },
-  billing:   { title:'Bills & Payments', crumb:'Charges and payments, browsed tenant-wise or property-wise', action:null },
+  billing:   { title:'Bills & Payments', crumb:'Charges and payments, browsed tenant-wise, property-wise, or by dues overview', action:null },
   finance:   { title:'Tenant View', crumb:'Full tenant dashboard – bills, payments, deposit status', action:null },
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
   reports:   { title:'Reports', crumb:'Occupancy, collections and outstanding dues', action:null },
@@ -1027,6 +1027,7 @@ function billingModeSwitcherHtml(){
   <div class="billing-mode-switch">
     <button type="button" class="billing-mode-btn ${mode==='tenant'?'active':''}" data-billing-mode="tenant">Tenant wise</button>
     <button type="button" class="billing-mode-btn ${mode==='property'?'active':''}" data-billing-mode="property">Property wise</button>
+    <button type="button" class="billing-mode-btn ${mode==='dues'?'active':''}" data-billing-mode="dues">Dues overview</button>
   </div>`;
 }
 
@@ -1228,6 +1229,11 @@ function billingBrowseHtml(allBills){
   const users = state.cache.users;
   const mode = nav.mode || 'tenant';
   const modeSwitcher = billingModeSwitcherHtml();
+
+  if (mode === 'dues'){
+    return modeSwitcher + billingDuesOverviewHtml(allBills);
+  }
+
   const crumb = billingBreadcrumbHtml();
 
   if (mode === 'tenant'){
@@ -1416,6 +1422,176 @@ function billingPaymentsByDateHtml(mPayments){
   }).join('');
 }
 
+/* ----------------------------------------------------------------
+   DUES OVERVIEW — a third billing mode: a portfolio-wide (all
+   tenants combined) arrears ledger.
+
+   Year cards  -> previous-years pending, this-year pending,
+                  total billed, received, and total outstanding.
+   Month cards -> the same five numbers scoped to a month, with
+                  "previous" running cumulatively from day one.
+   Month detail -> every bill raised and every payment received
+                  that month, grouped by the shared date, collapsed
+                  by default and expandable per date.
+   ---------------------------------------------------------------- */
+function billingDuesBreadcrumbHtml(){
+  const nav = state.billing.nav;
+  const parts = [`<button type="button" class="billing-crumb-seg" data-dues-crumb="root">Dues overview</button>`];
+  if (nav.year) parts.push(`<button type="button" class="billing-crumb-seg" data-dues-crumb="year">${escapeHtml(String(nav.year))}</button>`);
+  if (nav.month) parts.push(`<span class="billing-crumb-seg current">${MONTH_NAMES[Number(nav.month)-1]}</span>`);
+  return `<div class="billing-breadcrumb">${parts.join('<span class="billing-crumb-sep">›</span>')}</div>`;
+}
+
+function billingDuesYearStats(allBills, allPayments, year){
+  const prevPending = allBills.filter(b => b.year != null && b.year < year && b.status !== 'paid')
+    .reduce((s,b)=>s+Number(b.pending_amount||0),0);
+  const thisPending = allBills.filter(b => b.year === year && b.status !== 'paid')
+    .reduce((s,b)=>s+Number(b.pending_amount||0),0);
+  const totalBilled = allBills.filter(b => b.year === year)
+    .reduce((s,b)=>s+Number(b.amount||0),0);
+  const received = allPayments.filter(p => p.payment_date && new Date(p.payment_date).getFullYear() === year)
+    .reduce((s,p)=>s+Number(p.amount||0),0);
+  return { prevPending, thisPending, totalBilled, received, totalPending: prevPending + thisPending };
+}
+
+function billingDuesMonthStats(allBills, allPayments, year, month){
+  const isBefore = b => b.year < year || (b.year === year && b.month < month);
+  const prevPending = allBills.filter(b => b.year != null && isBefore(b) && b.status !== 'paid')
+    .reduce((s,b)=>s+Number(b.pending_amount||0),0);
+  const thisPending = allBills.filter(b => b.year === year && b.month === month && b.status !== 'paid')
+    .reduce((s,b)=>s+Number(b.pending_amount||0),0);
+  const totalBilled = allBills.filter(b => b.year === year && b.month === month)
+    .reduce((s,b)=>s+Number(b.amount||0),0);
+  const received = allPayments.filter(p => {
+    if (!p.payment_date) return false;
+    const d = new Date(p.payment_date);
+    return d.getFullYear() === year && d.getMonth()+1 === month;
+  }).reduce((s,p)=>s+Number(p.amount||0),0);
+  return { prevPending, thisPending, totalBilled, received, totalPending: prevPending + thisPending };
+}
+
+function billingDuesStatLinesHtml(s, opts){
+  const { small=false, thisLabel='Pending', highlightLast=true } = opts || {};
+  const cls = small ? ' small' : '';
+  const labels = small
+    ? { prev:'Prev', total:'Bill', recv:'Recv', pend:'Due' }
+    : { prev:'Previous dues', total:'Total bill', recv:'Received', pend:'Current pending' };
+  const lastStyle = highlightLast ? ' style="border-top:1px dashed var(--line); margin-top:4px; padding-top:5px;"' : '';
+  return `
+    <div class="billing-stat-line${cls}"><span>${labels.prev}</span><strong style="color:${s.prevPending>0?'var(--rust)':'inherit'};">${currency(s.prevPending)}</strong></div>
+    <div class="billing-stat-line${cls}"><span>${escapeHtml(thisLabel)}</span><strong style="color:${s.thisPending>0?'var(--rust)':'inherit'};">${currency(s.thisPending)}</strong></div>
+    <div class="billing-stat-line${cls}"><span>${labels.total}</span><strong>${currency(s.totalBilled)}</strong></div>
+    <div class="billing-stat-line${cls}"><span>${labels.recv}</span><strong style="color:var(--green-deep);">${currency(s.received)}</strong></div>
+    <div class="billing-stat-line${cls}"${lastStyle}><span>${labels.pend}</span><strong style="color:${s.totalPending>0?'var(--rust)':'var(--success)'};">${currency(s.totalPending)}</strong></div>`;
+}
+
+function billingDuesYearCardsHtml(allBills, allPayments){
+  const billYears = allBills.map(b=>b.year).filter(Boolean);
+  const paymentYears = allPayments.map(p=>p.payment_date ? new Date(p.payment_date).getFullYear() : null).filter(Boolean);
+  const years = [...new Set([...billYears, ...paymentYears])].sort((a,b)=>b-a);
+  if (years.length === 0){
+    return emptyStateHtml('No billing history yet', 'Bills and payments will appear here once created.', emptyIcon());
+  }
+  return `
+  <div class="billing-card-grid billing-year-grid billing-dues-year-grid">
+    ${years.map(y => `
+    <button type="button" class="card billing-pick-card billing-year-card" data-dues-drill-year="${y}">
+      <div class="billing-year-num">${y}</div>
+      ${billingDuesStatLinesHtml(billingDuesYearStats(allBills, allPayments, y), { thisLabel:'This year pending' })}
+    </button>`).join('')}
+  </div>`;
+}
+
+function billingDuesMonthCardsHtml(allBills, allPayments, year){
+  const nav = state.billing.nav;
+  const cards = MONTH_NAMES.map((name, i) => {
+    const m = i+1;
+    const selected = Number(nav.month) === m;
+    return `
+    <button type="button" class="card billing-pick-card billing-month-card ${selected?'selected':''}" data-dues-drill-month="${m}">
+      <div class="billing-month-name">${name}</div>
+      ${billingDuesStatLinesHtml(billingDuesMonthStats(allBills, allPayments, year, m), { small:true, thisLabel:'This mo.' })}
+    </button>`;
+  }).join('');
+  return `<div class="billing-card-grid billing-month-grid billing-dues-month-grid">${cards}</div>`;
+}
+
+function billingDuesDateGroupsHtml(allBills, allPayments, year, month){
+  const mBills = allBills.filter(b => b.year === year && b.month === month);
+  const mPayments = allPayments.filter(p => {
+    if (!p.payment_date) return false;
+    const d = new Date(p.payment_date);
+    return d.getFullYear() === year && d.getMonth()+1 === month;
+  });
+  const dateKeys = new Set();
+  mBills.forEach(b => { if (b.bill_date) dateKeys.add(String(b.bill_date).slice(0,10)); });
+  mPayments.forEach(p => { if (p.payment_date) dateKeys.add(String(p.payment_date).slice(0,10)); });
+  if (dateKeys.size === 0){
+    return emptyStateHtml('No activity this month', 'No bills were raised and no payments were recorded yet.', emptyIcon());
+  }
+  const sortedDates = [...dateKeys].sort((a,b)=> new Date(b) - new Date(a));
+  return sortedDates.map(dateKey => {
+    const dBills = mBills.filter(b => String(b.bill_date||'').slice(0,10) === dateKey);
+    const dPayments = mPayments.filter(p => String(p.payment_date||'').slice(0,10) === dateKey);
+    const billedAmt = dBills.reduce((s,b)=>s+Number(b.amount||0),0);
+    const receivedAmt = dPayments.reduce((s,p)=>s+Number(p.amount||0),0);
+    const count = dBills.length + dPayments.length;
+    return `
+    <div class="collapsible-section billing-group-section">
+      <div class="collapsible-header" onclick="toggleCollapse(this)">
+        <h3>${dateFmt(dateKey)} <span class="billing-group-count">(${count} ${count===1?'entry':'entries'})</span></h3>
+        <div class="billing-group-header-right">
+          <span class="billing-group-totals">
+            ${dBills.length ? `<span>Billed <strong class="mono">${currency(billedAmt)}</strong></span>` : ''}
+            ${dPayments.length ? `<span>Received <strong class="mono" style="color:var(--green-deep);">${currency(receivedAmt)}</strong></span>` : ''}
+          </span>
+          <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </div>
+      <div class="collapsible-body">
+        ${dBills.length ? `
+        <div style="font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em;">Bills raised</div>
+        ${dBills.map(b => `
+        <div class="billing-payment-row" style="padding:6px 0; border-bottom:1px dashed var(--line);">
+          <span><strong>${escapeHtml(b.user?.name || ('#'+b.user_id))}</strong> <span class="mono" style="color:var(--muted);">${escapeHtml(b.shop?.shop_number||'')} · ${escapeHtml(b.bill_type)} · #${b.id}</span></span>
+          <span style="display:flex; gap:8px; align-items:center;">${stampHtml(b.status)}<span class="mono">${currency(b.amount)}</span></span>
+        </div>`).join('')}` : ''}
+        ${dPayments.length ? `
+        <div style="font-size:12px; font-weight:600; color:var(--muted); margin:${dBills.length?'12px':'0'} 0 6px; text-transform:uppercase; letter-spacing:.04em;">Payments received</div>
+        ${dPayments.map(p => `
+        <div class="billing-payment-row" style="padding:6px 0; border-bottom:1px dashed var(--line);">
+          <span><strong>${escapeHtml(p.bill.user?.name || ('#'+p.bill.user_id))}</strong> <span class="mono" style="color:var(--muted);">${escapeHtml(p.bill.shop?.shop_number||'')} · ${escapeHtml(p.payment_method)} · Bill #${p.bill.id}</span></span>
+          <span class="mono" style="color:var(--green-deep); font-weight:700;">${currency(p.amount)}</span>
+        </div>`).join('')}` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function billingDuesOverviewHtml(allBills){
+  const nav = state.billing.nav;
+  const allPayments = allBills.flatMap(b => (b.payments||[]).map(p => ({ ...p, bill: b })));
+  const crumb = billingDuesBreadcrumbHtml();
+
+  if (!nav.year){
+    return crumb + billingDuesYearCardsHtml(allBills, allPayments);
+  }
+  const year = Number(nav.year);
+  const monthCards = billingDuesMonthCardsHtml(allBills, allPayments, year);
+
+  if (!nav.month){
+    return crumb + monthCards;
+  }
+  const month = Number(nav.month);
+  const stats = billingDuesMonthStats(allBills, allPayments, year, month);
+  const detail = `
+  <div class="billing-month-detail">
+    <div class="billing-month-summary">${billingDuesStatLinesHtml(stats, { thisLabel:'This month pending', highlightLast:false })}</div>
+    ${billingDuesDateGroupsHtml(allBills, allPayments, year, month)}
+  </div>`;
+  return crumb + monthCards + detail;
+}
+
 function attachBillingResultHandlers(){
   document.querySelectorAll('[data-billing-mode]').forEach(el => el.addEventListener('click', () => {
     const mode = el.dataset.billingMode;
@@ -1457,6 +1633,25 @@ function attachBillingResultHandlers(){
     state.billing.nav.tab = el.dataset.billingTab;
     renderBillingResults();
   }));
+
+  // Dues overview mode: year -> month -> date-grouped bills/payments.
+  document.querySelectorAll('[data-dues-drill-year]').forEach(el => el.addEventListener('click', () => {
+    state.billing.nav.year = el.dataset.duesDrillYear;
+    state.billing.nav.month = null;
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-dues-drill-month]').forEach(el => el.addEventListener('click', () => {
+    const m = Number(el.dataset.duesDrillMonth);
+    state.billing.nav.month = state.billing.nav.month === m ? null : m;
+    renderBillingResults();
+  }));
+  document.querySelectorAll('[data-dues-crumb]').forEach(el => el.addEventListener('click', () => {
+    const level = el.dataset.duesCrumb;
+    if (level === 'root'){ state.billing.nav.year = null; state.billing.nav.month = null; }
+    else if (level === 'year'){ state.billing.nav.month = null; }
+    renderBillingResults();
+  }));
+
   document.querySelectorAll('[data-crumb]').forEach(el => el.addEventListener('click', () => {
     const level = el.dataset.crumb;
     const mode = state.billing.nav.mode || 'tenant';

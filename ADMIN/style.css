@@ -589,6 +589,8 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .billing-card-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; margin-bottom:18px; }
 .billing-year-grid{ grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
 .billing-month-grid{ grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+.billing-dues-year-grid{ grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); }
+.billing-dues-month-grid{ grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); }
 .billing-pick-card{ text-align:left; cursor:pointer; width:100%; font-family:inherit; }
 .billing-year-card{ background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow-sm); transition:box-shadow .15s, border-color .15s; }
 .billing-year-card:hover{ box-shadow:var(--shadow-md); border-color:var(--green); }
