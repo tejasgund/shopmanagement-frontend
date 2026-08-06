@@ -812,6 +812,15 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .billing-dues-bar{ background:var(--green); height:100%; border-radius:999px; transition:width .4s ease; }
 .billing-dues-detail-summary{ margin-bottom:16px; }
 
+.billing-dues-filter-bar{
+  display:flex; flex-wrap:wrap; gap:20px; align-items:flex-end;
+  background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px 16px; margin-bottom:14px;
+}
+.billing-dues-filter-group{ display:flex; flex-direction:column; gap:6px; }
+.billing-dues-filter-label{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:700; }
+.billing-dues-filter-group .sort-select{ min-width:220px; }
+
 /* Deposits — grouped views with progress bars */
 .deposit-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
 .deposit-toggle{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); cursor:pointer; font-weight:600; }

@@ -26,7 +26,7 @@ const state = {
     manageTab: 'bills', // 'bills' | 'payments' — sub-tab within Manage
     filters: { status: [], complexIds: [], typeSet: [], years: [], months: [], search: '' },
     paymentFilters: { complexId: '', method: '', year: '', month: '', search: '' },
-    nav: { mode: 'tenant', complexId: null, userId: null, year: null, month: null, tab: 'bills' },
+    nav: { mode: 'tenant', complexId: null, userId: null, year: null, month: null, tab: 'bills', duesStatus: 'all' },
     sort: 'newest',
     paymentSort: 'newest',
   },
