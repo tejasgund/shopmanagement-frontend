@@ -1,29 +1,25 @@
 /* ================================================================
-   USER/js/tenant-dashboard.js — split from the old USER/script.js
-   Contains: TENANT PORTAL — loadTenantPortal(), the function that
-   fetches profile/shops/bills/payments and renders the whole
-   dashboard. Depends on core.js + ui-helpers.js, and calls into
-   tenant-ledger.js (renderTpBillDrill, renderTpPayDrill, renderTenantLedger).
+   USER/js/tenant-dashboard.js — split from the old USER/script.js,
+   then rebuilt around plain, direct questions ("how much is my rent
+   for Feb", "what did I pay last month") instead of dense stat grids
+   and multi-click drill-downs — most tenants using this portal are
+   not tech-savvy, so the goal is: the answer is either already on
+   screen, or two taps away (pick month, pick year).
+
+   Contains: loadTenantPortal(), the function that fetches
+   profile/shops/bills/payments and renders the whole dashboard.
+   Depends on core.js + ui-helpers.js, and calls into
+   tenant-ledger.js (renderTpMonthAnswer, renderTenantLedger).
    ================================================================ */
 
-/* ================================================================
-   TENANT PORTAL
-   ================================================================ */
-/* ================================================================
-   TENANT PORTAL
-   ================================================================ */
 document.getElementById('tenantRefreshBtn').addEventListener('click', async (e) => {
   e.currentTarget.classList.add('spinning');
   try { await loadTenantPortal(); showToast('Data refreshed', 'success'); }
   finally { e.currentTarget.classList.remove('spinning'); }
 });
 
-// Tenant portal filter state
+// Tenant portal filter state (kept for compatibility with any older code paths)
 const tpFilters = { complex:'', shop:'', month:'', year:'', status:'', dateFrom:'', dateTo:'' };
-
-
-
-
 
 async function loadTenantPortal(){
   const content = document.getElementById('tenantContent');
@@ -36,25 +32,19 @@ async function loadTenantPortal(){
       api('/api/tenant/payments'),
     ]);
     document.getElementById('tenantName').textContent = profile.name;
-    // ── add agreement‑days reminder ──
+    document.getElementById('tenantGreeting').textContent = getTimeGreeting(profile.name);
+
+    // ── Agreement expiry check (shown as a banner only if it needs attention) ──
     let soonestEnd = null;
     shops.forEach(s => {
-        if (s.agreement_end_date) {
-            const d = new Date(s.agreement_end_date);
-            if (!soonestEnd || d < soonestEnd) soonestEnd = d;
-        }
+      if (s.agreement_end_date) {
+        const d = new Date(s.agreement_end_date);
+        if (!soonestEnd || d < soonestEnd) soonestEnd = d;
+      }
     });
-    let daysLeft = soonestEnd ? Math.round((soonestEnd - new Date()) / 86400000) : null;
-    let agreementMsg = '';
-    if (daysLeft !== null) {
-        if (daysLeft < 0) agreementMsg = ' ⚠️ Agreement expired!';
-        else if (daysLeft <= 30) agreementMsg = ` ⏳ ${daysLeft} days left on agreement`;
-        else agreementMsg = ` 📅 ${daysLeft} days left on agreement`;
-    }
-    const greeting = getTimeGreeting(profile.name) + agreementMsg;
-    document.getElementById('tenantGreeting').textContent = greeting;
+    const daysLeft = soonestEnd ? Math.round((soonestEnd - new Date()) / 86400000) : null;
 
-    // Compute summary
+    // ── Core numbers ──
     const totalRent = shops.reduce((s,sh)=>s+Number(sh.shop_rent||0),0);
     const totalDeposit = shops.reduce((s,sh)=>s+Number(sh.shop_deposit||0),0);
     const pendingBills = bills.filter(b=>b.status!=='paid');
@@ -62,13 +52,10 @@ async function loadTenantPortal(){
     const paidTotal = payments.reduce((s,p)=>s+Number(p.amount||0),0);
     const nextDue = pendingBills.filter(b=>b.due_date).sort((a,b)=>new Date(a.due_date)-new Date(b.due_date))[0];
 
-    // Complex names come straight from /api/tenant/shops (complex_name per shop) —
-    // /api/complex itself is admin-only and would 403 for a tenant.
     const complexNames = {};
     shops.forEach(s => { if (s.complex_id) complexNames[s.complex_id] = s.complex_name; });
 
     let depositPaid = 0;
-    let depositRemaining = totalDeposit;
     let depositSourceFailed = false;
     try {
       const depPays = await api('/api/tenant/deposit-payments');
@@ -80,43 +67,84 @@ async function loadTenantPortal(){
         depositPaid = payments.filter(p => depositBillIds.has(p.bill_id)).reduce((s,p)=>s+Number(p.amount||0),0);
       }
     }
-    depositRemaining = Math.max(0, totalDeposit - depositPaid);
+    const depositRemaining = Math.max(0, totalDeposit - depositPaid);
+
+    // ── "You paid last month" ──
+    const now = new Date();
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    const lastMonthPays = payments.filter(p => {
+      if (!p.payment_date) return false;
+      const d = new Date(p.payment_date);
+      return d.getFullYear() === lastMonthDate.getFullYear() && d.getMonth() === lastMonthDate.getMonth();
+    });
+    const lastMonthPaidTotal = lastMonthPays.reduce((s,p)=>s+Number(p.amount||0),0);
 
     // ── Build the HTML ──
     content.innerHTML = `
-    <!-- Summary Cards -->
-        <div class="tp-stat-grid">
-      <div class="tp-stat"><div class="tp-label">Assigned Shops</div><div class="tp-value">${shops.length}</div></div>
-      <div class="tp-stat accent-green"><div class="tp-label">Monthly Rent</div><div class="tp-value" style="font-size:16px;">${currency(totalRent)}</div></div>
-      <div class="tp-stat"><div class="tp-label">Deposit Required</div><div class="tp-value" style="font-size:16px;">${currency(totalDeposit)}</div></div>
-      <div class="tp-stat accent-green"><div class="tp-label">Deposit Paid</div><div class="tp-value" style="font-size:16px;">${currency(depositPaid)}</div></div>
-      <div class="tp-stat ${depositRemaining>0?'accent-rust':'accent-green'}"><div class="tp-label">Deposit Status</div><div class="tp-value" style="font-size:14px;">${depositRemaining<=0 && totalDeposit>0 ? 'Fully paid' : currency(depositRemaining)+' due'}</div></div>
-      <div class="tp-stat accent-rust"><div class="tp-label">Pending Rent</div><div class="tp-value" style="font-size:16px;">${currency(pendingTotal)}</div></div>
-      <div class="tp-stat accent-green"><div class="tp-label">Total Paid</div><div class="tp-value" style="font-size:16px;">${currency(paidTotal)}</div></div>
-      <div class="tp-stat accent-partial"><div class="tp-label">Next Due Date</div><div class="tp-value" style="font-size:14px;">${nextDue ? dateFmt(nextDue.due_date) : '—'}</div></div>
-      <!-- NEW: Agreement expiry -->
-      <div class="tp-stat ${(daysLeft !== null && daysLeft <= 30) ? 'accent-rust' : 'accent-green'}" style="grid-column: span 1;">
-        <div class="tp-label">Agreement Days Left</div>
-        <div class="tp-value" style="font-size:14px;">${daysLeft !== null ? (daysLeft < 0 ? '⚠️ Expired' : daysLeft + ' days') : '—'}</div>
+    ${daysLeft !== null && daysLeft <= 30 ? `
+    <div class="warn-box" style="margin-bottom:16px;">
+      ${warnIcon()}
+      <span>${daysLeft < 0 ? `Your shop agreement expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft)!==1?'s':''} ago.` : `Your shop agreement ends in ${daysLeft} day${daysLeft!==1?'s':''}.`} Please contact your admin.</span>
+    </div>` : ''}
+
+    <!-- At a glance: the three questions tenants ask most -->
+    <div class="tp-hero-grid">
+      <div class="tp-hero-card ${pendingTotal>0?'due':'clear'}">
+        <div class="tp-hero-label">${pendingTotal>0?'You currently owe':'You are all paid up'}</div>
+        <div class="tp-hero-value">${pendingTotal>0?currency(pendingTotal):'✓'}</div>
+        <div class="tp-hero-sub">${nextDue ? `Next due ${dateFmt(nextDue.due_date)}` : (pendingTotal>0 ? 'Across all bills' : 'Nothing pending right now')}</div>
+      </div>
+      <div class="tp-hero-card">
+        <div class="tp-hero-label">You paid last month</div>
+        <div class="tp-hero-value">${currency(lastMonthPaidTotal)}</div>
+        <div class="tp-hero-sub">${lastMonthPays.length} payment${lastMonthPays.length!==1?'s':''} in ${lastMonthDate.toLocaleString('en-IN',{month:'long'})}</div>
+      </div>
+      <div class="tp-hero-card">
+        <div class="tp-hero-label">Security deposit</div>
+        <div class="tp-hero-value" style="font-size:19px;">${currency(depositPaid)} <span style="font-size:12.5px; color:var(--muted); font-weight:600;">of ${currency(totalDeposit)}</span></div>
+        ${totalDeposit > 0 ? `<div class="deposit-bar-wrap" style="margin-top:8px;"><div class="deposit-bar" style="width:${Math.min(100,Math.round(depositPaid/totalDeposit*100))}%;"></div></div>` : `<div class="tp-hero-sub">No deposit on file</div>`}
       </div>
     </div>
 
-    <!-- Profile Section -->
+    <!-- Ask about a month: pick month + year, see that month's bills by type and payments -->
+    <div class="card card-pad" style="margin-bottom:16px;">
+      <h3 style="font-size:15px; margin:0 0 4px;">Ask about a month</h3>
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 14px;">e.g. "how much was my electricity bill in December" — pick the month and year below.</p>
+      <div style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; align-items:center;">
+        <select id="tpAnswerMonth" class="sort-select">
+          ${monthNamesShort.map((mn,i)=>`<option value="${i+1}" ${i+1===now.getMonth()+1?'selected':''}>${mn}</option>`).join('')}
+        </select>
+        <select id="tpAnswerYear" class="sort-select">
+          ${Array.from({length:4},(_,i)=>{ const y=now.getFullYear()-i; return `<option value="${y}" ${i===0?'selected':''}>${y}</option>`; }).join('')}
+        </select>
+      </div>
+      <div id="tpAnswerBody"></div>
+    </div>
+
+    <!-- Full-year summary table + PDF -->
     <div class="collapsible-section">
-      <div class="collapsible-header" onclick="toggleCollapse(this)">
-        <h3>My Profile</h3>
+      <div class="collapsible-header open" onclick="toggleCollapse(this)">
+        <h3>Full year summary</h3>
         <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
-      <div class="collapsible-body">
-        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px;">
-          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Name</div><div style="font-weight:600; margin-top:3px;">${escapeHtml(profile.name)}</div></div>
-          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Mobile</div><div class="mono" style="margin-top:3px;">${escapeHtml(profile.mobile)}</div></div>
-          ${profile.email ? `<div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Email</div><div style="margin-top:3px;">${escapeHtml(profile.email)}</div></div>` : ''}
-          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Tenant ID</div><div class="mono" style="margin-top:3px;">#${profile.id}</div></div>
-          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Status</div><div style="margin-top:3px;"><span class="pill ${profile.is_active?'active-pill':'inactive-pill'}"><span class="pill-dot"></span>${profile.is_active?'Active':'Inactive'}</span></div></div>
-          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Shops</div><div style="margin-top:3px; font-weight:700;">${shops.length}</div></div>
-          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Rent Bill Date</div><div style="margin-top:3px; font-weight:600;">${profile.rent_bill_date ? `Day ${profile.rent_bill_date} of month` : '—'}</div></div>
-          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Auto-billing</div><div style="margin-top:3px;"><span class="pill ${profile.auto_rent_bill_enabled?'active-pill':'inactive-pill'}"><span class="pill-dot"></span>${profile.auto_rent_bill_enabled?'Auto ON':'Auto OFF'}</span></div></div>
+      <div class="collapsible-body open">
+        <div style="display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
+          <label style="font-weight:600; font-size:13px;">Year:</label>
+          <select id="tpLedgerYear" class="sort-select" style="padding:6px 10px;">
+            ${Array.from({length:6},(_,i) => {
+              const y = new Date().getFullYear() - i;
+              return `<option value="${y}" ${i===0?'selected':''}>${y}</option>`;
+            }).join('')}
+          </select>
+          <span class="record-count-tag" id="tpLedgerCount">Loading…</span>
+          <div style="display:flex; gap:8px; margin-left:auto;">
+            <button class="btn btn-ghost btn-sm" onclick="downloadMonthlyLedgerPdf('tenant')">Download PDF</button>
+            <button class="btn btn-ghost btn-sm" onclick="printMonthlyLedgerPdf('tenant')">Print</button>
+            <button class="btn btn-ghost btn-sm" onclick="shareMonthlyLedgerPdf('tenant')">Share</button>
+          </div>
+        </div>
+        <div id="tpLedgerContainer">
+          <div style="text-align:center; padding:20px; color:var(--muted);">Select a year to load ledger.</div>
         </div>
       </div>
     </div>
@@ -144,10 +172,7 @@ async function loadTenantPortal(){
               <div><div style="font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase;">Agreement Start</div><div class="mono" style="font-weight:700; font-size:13px;">${s.agreement_start_date ? dateFmt(s.agreement_start_date) : '—'}</div></div>
               <div><div style="font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase;">Agreement End</div><div class="mono" style="font-weight:700; font-size:13px;">${s.agreement_end_date ? dateFmt(s.agreement_end_date) : '—'}</div></div>
             </div>
-            <div class="amt-row" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px; border:none; padding:0;">
-              <div><div style="font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase;">Days Left</div><div style="font-weight:700; font-size:14px;">${s.agreement_end_date ? daysLeftHtml(s.agreement_end_date) : '—'}</div></div>
-              <div><div style="font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase;">Status</div><div style="font-weight:700; font-size:14px;">${s.agreement_end_date ? daysLeftHtml(s.agreement_end_date) : '—'}</div></div>
-            </div>
+            ${s.agreement_end_date ? `<div style="margin-top:6px;">${daysLeftHtml(s.agreement_end_date)}</div>` : ''}
           </div>`).join('')}
       </div>
     </div>
@@ -164,15 +189,8 @@ async function loadTenantPortal(){
           <div class="card stat-card accent-green"><div class="label">Paid</div><div class="value mono" style="font-size:18px;">${currency(depositPaid)}</div></div>
           <div class="card stat-card accent-rust"><div class="label">Remaining</div><div class="value mono" style="font-size:18px;">${currency(depositRemaining)}</div></div>
         </div>
-        ${totalDeposit > 0 ? `
-        <div class="deposit-progress">
-          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:4px;">
-            <span>Progress</span><span>${Math.round(depositPaid/totalDeposit*100)}%</span>
-          </div>
-          <div class="deposit-bar-wrap"><div class="deposit-bar" style="width:${Math.min(100,Math.round(depositPaid/totalDeposit*100))}%;"></div></div>
-        </div>` : ''}
         ${shops.length ? `
-        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; margin-top:14px;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px;">
           ${shops.map(s=>`<div class="info-card"><div class="info-row"><span class="info-label">${escapeHtml(s.shop_number)}</span><span class="info-val">${currency(s.shop_deposit||0)}</span></div></div>`).join('')}
         </div>` : ''}
         ${depositSourceFailed && depositPaid === 0 ? `
@@ -183,71 +201,37 @@ async function loadTenantPortal(){
       </div>
     </div>
 
-    <!-- Bills Section -->
+    <!-- Profile -->
     <div class="collapsible-section">
       <div class="collapsible-header" onclick="toggleCollapse(this)">
-        <h3>Bills <span class="record-count-tag" style="margin-left:8px;">${bills.length}</span></h3>
+        <h3>My Profile</h3>
         <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="collapsible-body">
-        <div id="tpBillCrumb" class="drill-crumb"></div>
-        <div id="tpBillDrillArea"></div>
-      </div>
-    </div>
-
-    <!-- Payments Section -->
-<div class="collapsible-section">
-  <div class="collapsible-header" onclick="toggleCollapse(this)">
-    <h3>Payment History <span class="record-count-tag" style="margin-left:8px;">${payments.length}</span></h3>
-    <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-  </div>
-  <div class="collapsible-body">
-    <div id="tpPayCrumb" class="drill-crumb"></div>
-    <div id="tpPayDrillArea"></div>
-  </div>
-</div>
-
-    <!-- Monthly Ledger (NEW) -->
-    <div class="collapsible-section">
-      <div class="collapsible-header" onclick="toggleCollapse(this)">
-        <h3>Monthly Ledger</h3>
-        <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body">
-        <div style="display:flex; gap:10px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
-          <label style="font-weight:600; font-size:13px;">Year:</label>
-          <select id="tpLedgerYear" class="sort-select" style="padding:6px 10px;">
-            ${Array.from({length:6},(_,i) => {
-              const y = new Date().getFullYear() - i;
-              return `<option value="${y}" ${i===0?'selected':''}>${y}</option>`;
-            }).join('')}
-          </select>
-          <span class="record-count-tag" id="tpLedgerCount">Loading…</span>
-          <div style="display:flex; gap:8px; margin-left:auto;">
-            <button class="btn btn-ghost btn-sm" onclick="downloadMonthlyLedgerPdf('tenant')">Download PDF</button>
-            <button class="btn btn-ghost btn-sm" onclick="printMonthlyLedgerPdf('tenant')">Print</button>
-            <button class="btn btn-ghost btn-sm" onclick="shareMonthlyLedgerPdf('tenant')">Share</button>
-          </div>
-        </div>
-        <div id="tpLedgerContainer">
-          <div style="text-align:center; padding:20px; color:var(--muted);">Select a year to load ledger.</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px;">
+          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Name</div><div style="font-weight:600; margin-top:3px;">${escapeHtml(profile.name)}</div></div>
+          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Mobile</div><div class="mono" style="margin-top:3px;">${escapeHtml(profile.mobile)}</div></div>
+          ${profile.email ? `<div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Email</div><div style="margin-top:3px;">${escapeHtml(profile.email)}</div></div>` : ''}
+          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Status</div><div style="margin-top:3px;"><span class="pill ${profile.is_active?'active-pill':'inactive-pill'}"><span class="pill-dot"></span>${profile.is_active?'Active':'Inactive'}</span></div></div>
+          <div><div style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">Rent Bill Date</div><div style="margin-top:3px; font-weight:600;">${profile.rent_bill_date ? `Day ${profile.rent_bill_date} of month` : '—'}</div></div>
         </div>
       </div>
     </div>
     `; // ── end content.innerHTML ──
 
-    // ── Bills & Payments year→month drill-down ──
+    // ── "Ask about a month" wiring — reuses already-loaded bills/payments, no extra API call ──
     tpBillsData = bills; tpShopsData = shops;
-    tpBillDrill = { year:null, month:null };
-    renderTpBillDrill();
-
     tpPaysData = payments;
-    tpPayDrill = { year:null, month:null };
-    renderTpPayDrill();
+    function renderTpAnswer(){
+      const y = document.getElementById('tpAnswerYear').value;
+      const m = document.getElementById('tpAnswerMonth').value;
+      document.getElementById('tpAnswerBody').innerHTML = renderTpMonthAnswer(y, m);
+    }
+    document.getElementById('tpAnswerMonth').addEventListener('change', renderTpAnswer);
+    document.getElementById('tpAnswerYear').addEventListener('change', renderTpAnswer);
+    renderTpAnswer();
 
-
-
-    // ── Monthly Ledger (NEW) ──
+    // ── Full year summary (Monthly Ledger) ──
     const ledgerYear = document.getElementById('tpLedgerYear');
     const ledgerContainer = document.getElementById('tpLedgerContainer');
     const ledgerCount = document.getElementById('tpLedgerCount');
@@ -268,14 +252,11 @@ async function loadTenantPortal(){
     }
 
     if (ledgerYear) {
-      ledgerYear.addEventListener('change', function() {
-        loadLedger(this.value);
-      });
-      // Load initial year
+      ledgerYear.addEventListener('change', function() { loadLedger(this.value); });
       loadLedger(ledgerYear.value);
     }
 
-    // ── Collapsible toggles (existing) ──
+    // ── Collapsible toggles ──
     document.querySelectorAll('.month-row-head').forEach(h => {
       h.addEventListener('click', () => {
         const body = h.nextElementSibling;
@@ -288,4 +269,3 @@ async function loadTenantPortal(){
     document.getElementById('retryBtn')?.addEventListener('click', loadTenantPortal);
   }
 }
-
