@@ -74,46 +74,65 @@ input,select,textarea{font-family:var(--font-body);}
 }
 .login-card{
   width:100%;
-  max-width:400px;
+  max-width:420px;
   background:var(--paper-raised);
   border:1px solid var(--line);
-  border-radius:var(--radius);
+  border-radius:16px;
   box-shadow:var(--shadow-lg);
-  padding:40px 32px;
+  padding:36px 30px;
   animation:rise 0.5s ease both;
 }
 @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
 .login-mark{
-  display:flex; align-items:center; gap:10px; margin-bottom:28px;
+  display:flex; align-items:center; gap:10px; margin-bottom:24px;
 }
 .login-mark .stamp-mark{
-  width:38px; height:38px; border-radius:8px;
+  width:40px; height:40px; border-radius:9px;
   background:var(--ink); color:var(--paper);
   display:flex; align-items:center; justify-content:center;
-  font-family:var(--font-display); font-weight:700; font-size:18px;
-  transform:rotate(-4deg);
+  font-family:var(--font-display); font-weight:700; font-size:19px;
+  transform:rotate(-4deg); flex-shrink:0;
 }
-.login-mark .wordmark{font-size:21px;}
+.login-mark .wordmark{font-size:20px; line-height:1.25;}
 .login-mark .wordmark span{color:var(--green); font-style:italic;}
-.login-card h1{font-size:24px; margin-bottom:4px;}
-.login-sub{color:var(--muted); font-size:13.5px; margin-bottom:28px;}
-.field{margin-bottom:18px;}
+.login-card h1{font-size:26px; margin-bottom:6px;}
+.login-sub{color:var(--muted); font-size:14px; margin-bottom:26px; line-height:1.45;}
+.field{margin-bottom:16px;}
 .field label{
   display:block; font-size:12.5px; font-weight:600; text-transform:uppercase;
   letter-spacing:0.04em; color:var(--muted); margin-bottom:7px;
 }
 .field input{
-  width:100%; padding:11px 13px; border:1.5px solid var(--line);
-  border-radius:var(--radius-sm); font-size:15px; background:var(--paper-raised);
+  width:100%; padding:13px 14px; border:1.5px solid var(--line);
+  border-radius:var(--radius-sm); font-size:16px; background:var(--paper-raised);
   transition:border-color .15s ease;
 }
-.field input:focus{border-color:var(--green);}
+.field input:focus{border-color:var(--green); outline:none;}
+
+/* Icon + input combined row — icon (and, for the password field, the
+   show/hide toggle) live inside the same bordered box as the input, so the
+   whole thing reads as one clear field instead of loose parts. */
+.input-icon-row{
+  display:flex; align-items:center; gap:10px;
+  border:1.5px solid var(--line); border-radius:var(--radius-sm);
+  background:var(--paper-raised); padding:0 14px;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+.input-icon-row:focus-within{ border-color:var(--green); box-shadow:0 0 0 3px rgba(47,111,79,0.10); }
+.input-icon-row .input-icon{ color:var(--muted); flex-shrink:0; }
+.input-icon-row:focus-within .input-icon{ color:var(--green); }
+.field .input-icon-row input{
+  border:none; padding:13px 0; flex:1; min-width:0; background:transparent; width:auto;
+}
+.field .input-icon-row input:focus{ outline:none; }
+
 .pw-row{position:relative;}
 .pw-toggle{
-  position:absolute; right:10px; top:50%; transform:translateY(-50%);
-  background:none; border:none; font-size:12px; color:var(--muted); font-weight:600;
-  padding:4px 6px;
+  background:none; border:none; font-size:11.5px; color:var(--muted); font-weight:700;
+  padding:6px 4px; letter-spacing:.04em; flex-shrink:0;
 }
+.input-icon-row .pw-toggle{ position:static; }
+.pw-toggle:hover{ color:var(--ink); }
 .btn{
   display:inline-flex; align-items:center; justify-content:center; gap:8px;
   padding:11px 18px; border-radius:var(--radius-sm); border:none;
@@ -125,6 +144,7 @@ input,select,textarea{font-family:var(--font-body);}
 .btn-primary:hover{background:var(--green-deep);}
 .btn-primary:disabled{background:#9FB8AB; cursor:not-allowed; transform:none;}
 .btn-block{width:100%;}
+.btn-lg{ padding:15px 18px; font-size:15.5px; margin-top:6px; box-shadow:var(--shadow-sm); }
 .btn-ghost{background:transparent; color:var(--ink); border:1.5px solid var(--line);}
 .btn-ghost:hover{border-color:var(--ink);}
 .btn-danger-ghost{background:transparent; color:var(--danger); border:1.5px solid var(--danger-soft);}
@@ -147,6 +167,22 @@ input,select,textarea{font-family:var(--font-body);}
   font-size:11.5px; color:var(--muted); display:flex; justify-content:space-between; gap:8px;
 }
 .api-base-note code{font-family:var(--font-mono); background:var(--paper); padding:2px 6px; border-radius:4px;}
+
+/* Friendly "call for help" block — replaces the old raw contact/code note */
+.login-help{
+  margin-top:22px; padding-top:18px; border-top:1px dashed var(--line);
+  display:flex; align-items:flex-start; gap:10px;
+}
+.login-help svg{ color:var(--green); flex-shrink:0; margin-top:2px; }
+.login-help-title{ font-size:12.5px; font-weight:700; color:var(--ink); margin-bottom:2px; }
+.login-help-sub{ font-size:12.5px; color:var(--muted); }
+.login-help-sub a{ color:var(--green-deep); font-weight:600; text-decoration:none; }
+.login-help-sub a:hover{ text-decoration:underline; }
+
+@media (max-width:420px){
+  .login-card{ padding:28px 20px; border-radius:14px; }
+  .login-card h1{ font-size:23px; }
+}
 
 /* ============================================================
    APP SHELL

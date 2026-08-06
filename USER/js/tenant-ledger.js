@@ -31,7 +31,84 @@ function groupByYearMonth(items, dateField, amountFn, pendingFn){
   return years;
 }
 
-// ── Bills drill-down ──
+// ── "Ask about a month" plain-language answer panel ──
+// Filters already-loaded tpBillsData/tpPaysData by year+month (no extra API
+// call), groups bills by type (Rent/Electricity/Water/...), and answers the
+// two questions tenants actually ask: "what do I owe for this month" and
+// "what did I pay this month" — in plain language, not a table.
+function renderTpMonthAnswer(year, month){
+  year = Number(year); month = Number(month);
+  const monthLabel = `${monthNamesShort[month-1]} ${year}`;
+
+  const monthBills = (tpBillsData||[]).filter(b => {
+    if (!b.bill_date) return false;
+    const d = new Date(b.bill_date);
+    return d.getFullYear() === year && d.getMonth()+1 === month;
+  });
+  const monthPays = (tpPaysData||[]).filter(p => {
+    if (!p.payment_date) return false;
+    const d = new Date(p.payment_date);
+    return d.getFullYear() === year && d.getMonth()+1 === month;
+  });
+
+  if (!monthBills.length && !monthPays.length) {
+    return `<div class="empty-compact">No bills or payments recorded for ${monthLabel}.</div>`;
+  }
+
+  const byType = {};
+  monthBills.forEach(b => {
+    const t = b.bill_type || 'Other';
+    if (!byType[t]) byType[t] = { amount:0, paid:0, pending:0, status:'paid' };
+    byType[t].amount += Number(b.amount||0);
+    byType[t].paid += Number(b.paid_amount||0);
+    byType[t].pending += Number(b.pending_amount||0);
+    if (b.status !== 'paid') byType[t].status = b.status;
+  });
+
+  const tilesHtml = Object.keys(byType).length ? `
+    <div class="tp-answer-grid">
+      ${Object.keys(byType).map(t => {
+        const info = byType[t];
+        const settled = info.pending <= 0;
+        return `
+        <div class="tp-answer-card">
+          <div class="tp-answer-type">${escapeHtml(t)}</div>
+          <div class="tp-answer-amt">${currency(info.amount)}</div>
+          <div class="tp-answer-status ${settled?'ok':'due'}">${settled ? 'Fully paid' : `${currency(info.pending)} still due`}</div>
+        </div>`;
+      }).join('')}
+    </div>` : `<div class="empty-compact">No bills for ${monthLabel}.</div>`;
+
+  const paysHtml = monthPays.length ? `
+    <div style="margin-top:16px;">
+      <div style="font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;">Payments you made in ${monthLabel}</div>
+      ${monthPays.map(p=>`
+        <div class="tenant-card tp-pay-row">
+          <div class="row1"><span class="title mono">${currency(p.amount)}</span><span class="meta">${escapeHtml(p.payment_method)}</span></div>
+          <div class="meta">Paid ${dateFmt(p.payment_date)}${p.remarks?' · '+escapeHtml(p.remarks):''}</div>
+        </div>`).join('')}
+    </div>` : `
+    <div style="margin-top:16px;">
+      <div class="empty-compact">You made no payments in ${monthLabel}.</div>
+    </div>`;
+
+  const totalPending = monthBills.reduce((s,b)=>s+Number(b.pending_amount||0),0);
+  const totalPaidThisMonth = monthPays.reduce((s,p)=>s+Number(p.amount||0),0);
+
+  return `
+    <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:13px;">
+      <div><span style="color:var(--muted);">Billed in ${monthLabel}:</span> <strong class="mono">${currency(monthBills.reduce((s,b)=>s+Number(b.amount||0),0))}</strong></div>
+      <div><span style="color:var(--muted);">Paid in ${monthLabel}:</span> <strong class="mono" style="color:var(--success);">${currency(totalPaidThisMonth)}</strong></div>
+      ${totalPending>0 ? `<div><span style="color:var(--muted);">Still due:</span> <strong class="mono" style="color:var(--rust);">${currency(totalPending)}</strong></div>` : ''}
+    </div>
+    ${tilesHtml}
+    ${paysHtml}
+  `;
+}
+
+// ── Bills drill-down (kept for compatibility; no longer linked from the
+// main dashboard flow, which now uses renderTpMonthAnswer above, but left
+// callable in case a future screen wants the full year→month browse UI) ──
 function renderTpBillDrill(){
   const grouped = groupByYearMonth(tpBillsData, 'bill_date', b=>Number(b.amount||0), b=>Number(b.pending_amount||0));
   const crumb = document.getElementById('tpBillCrumb');
