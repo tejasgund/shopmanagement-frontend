@@ -743,3 +743,64 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 }
 .complex-card-orphan{ border-style:dashed; }
 .complex-card-orphan .complex-card-title{ color:var(--rust); }
+
+/* ================================================================
+   Finance section redesign — Add/Manage/View tabs, calendar-style
+   month tiles, simplified Dues overview, Deposits progress bars.
+   ================================================================ */
+.billing-section-tabs{ display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+.billing-section-tab{
+  flex:1; min-width:170px; display:flex; align-items:center; gap:9px;
+  padding:12px 16px; border:1.5px solid var(--line); border-radius:var(--radius);
+  background:var(--paper-raised); font-family:inherit; font-size:13.5px; font-weight:700;
+  color:var(--muted); cursor:pointer; transition:border-color .12s, color .12s, background .12s;
+}
+.billing-section-tab:hover{ border-color:var(--green); color:var(--ink); }
+.billing-section-tab.active{ background:var(--ink); border-color:var(--ink); color:#fff; }
+.billing-section-tab .bst-num{
+  display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
+  border-radius:50%; background:var(--paper); color:var(--muted); font-size:11px; font-weight:700; flex-shrink:0;
+}
+.billing-section-tab.active .bst-num{ background:rgba(255,255,255,0.2); color:#fff; }
+
+.billing-add-intro{ font-size:13px; color:var(--muted); margin-bottom:16px; max-width:640px; line-height:1.5; }
+.billing-add-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+.billing-add-card{ text-align:left; cursor:pointer; width:100%; font-family:inherit; padding:20px; transition:box-shadow .15s, border-color .15s; }
+.billing-add-card:hover{ box-shadow:var(--shadow-md); border-color:var(--green); }
+.billing-add-icon{ width:38px; height:38px; border-radius:var(--radius-sm); background:var(--success-soft); color:var(--green-deep); display:flex; align-items:center; justify-content:center; margin-bottom:12px; }
+.billing-add-title{ font-size:15px; font-weight:700; margin-bottom:6px; }
+.billing-add-sub{ font-size:12.5px; color:var(--muted); line-height:1.5; }
+
+.billing-inline-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+
+/* Calendar-style month tiles used across View + Dues overview */
+.calendar-tile{ position:relative; border-top:3px solid var(--green) !important; }
+.calendar-tile.empty{ border-top-color:var(--line) !important; }
+.calendar-tile .billing-month-name{ display:flex; align-items:center; gap:5px; }
+.calendar-tile .billing-month-name svg{ opacity:.55; flex-shrink:0; }
+.calendar-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
+.calendar-detail .collapsible-header h3{ display:flex; align-items:center; gap:6px; }
+.calendar-detail .collapsible-header h3 svg{ opacity:.55; }
+
+.billing-dues-card{ padding:16px; }
+.billing-dues-label{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:700; }
+.billing-dues-outstanding{ font-family:var(--font-mono); font-weight:700; font-size:22px; color:var(--rust); margin-top:2px; }
+.billing-dues-outstanding.small{ font-size:17px; margin-bottom:6px; }
+.billing-dues-outstanding-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+.billing-dues-breakdown{ min-width:160px; }
+.billing-dues-collection{ border-top:1px dashed var(--line); padding-top:10px; }
+.billing-dues-bar-wrap{ background:var(--line); border-radius:999px; height:7px; overflow:hidden; }
+.billing-dues-bar{ background:var(--green); height:100%; border-radius:999px; transition:width .4s ease; }
+.billing-dues-detail-summary{ margin-bottom:16px; }
+
+/* Deposits — grouped views with progress bars */
+.deposit-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.deposit-toggle{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); cursor:pointer; font-weight:600; }
+.deposit-toggle input{ width:15px; height:15px; accent-color:var(--green); margin:0; }
+.deposit-group-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; margin-bottom:18px; }
+.deposit-group-card{ padding:16px; }
+.pill.inactive-pill{ background:var(--paper); color:var(--muted); }
+.pill.inactive-pill .pill-dot{ background:var(--muted); }
+
+/* Wider modal variant, used for the full tenant statement */
+.modal.modal-wide{ max-width:920px; }

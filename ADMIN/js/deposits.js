@@ -1,20 +1,157 @@
 /* ================================================================
-   ADMIN/js/deposits.js — split from the old ADMIN/script.js
-   Contains: DEPOSITS VIEW plus its edit/delete/record modals.
+   ADMIN/js/deposits.js — split from the old ADMIN/script.js, then
+   redesigned with three views so the numbers that matter for the
+   business are visible at a glance instead of buried in a raw list:
+
+     - By tenant   — required vs paid vs remaining per tenant, with
+                     a progress bar, and an Active/Inactive toggle
+                     (inactive = tenant currently holds no shop).
+     - By property — the same, grouped by complex.
+     - All payments — the original flat, chronological payment log,
+                     kept for record-keeping and the edit/delete
+                     actions.
    ================================================================ */
-/* ================================================================
-   DEPOSITS VIEW
-   ================================================================ */
+
 async function depositsView(){
-  const [complexes, users] = await Promise.all([ensureLoaded('complexes','/api/complex'), ensureLoaded('users','/api/user')]);
+  await Promise.all([
+    ensureLoaded('complexes','/api/complex'),
+    ensureLoaded('users','/api/user'),
+    ensureLoaded('shops','/api/shop'),
+  ]);
   let deposits = [];
   try { deposits = await api('/api/deposit-payment'); } catch(e){}
   state.cache.deposits = deposits;
+
+  const mode = state.deposits.mode || 'tenant';
+  return `
+  <div class="billing-mode-switch">
+    <button type="button" class="billing-mode-btn ${mode==='tenant'?'active':''}" data-deposit-mode="tenant">By tenant</button>
+    <button type="button" class="billing-mode-btn ${mode==='property'?'active':''}" data-deposit-mode="property">By property</button>
+    <button type="button" class="billing-mode-btn ${mode==='all'?'active':''}" data-deposit-mode="all">All payments</button>
+  </div>
+  <div id="depositsBody"></div>
+  `;
+}
+
+function attachDepositHandlers(){
+  document.querySelectorAll('[data-deposit-mode]').forEach(btn => btn.addEventListener('click', () => {
+    const mode = btn.dataset.depositMode;
+    if (mode === state.deposits.mode) return;
+    state.deposits.mode = mode;
+    document.querySelectorAll('[data-deposit-mode]').forEach(b => b.classList.toggle('active', b.dataset.depositMode === mode));
+    renderDepositsBody();
+  }));
+  renderDepositsBody();
+}
+
+function renderDepositsBody(){
+  const container = document.getElementById('depositsBody');
+  if (!container) return;
+  const mode = state.deposits.mode || 'tenant';
+  if (mode === 'property') container.innerHTML = depositsByPropertyHtml();
+  else if (mode === 'all') container.innerHTML = depositsAllPaymentsHtml();
+  else container.innerHTML = depositsByTenantHtml();
+  attachDepositsBodyHandlers();
+}
+
+function depositTenantStats(u){
+  const shops = state.cache.shops || [];
+  const deposits = state.cache.deposits || [];
+  const ownedShops = shops.filter(s => s.assigned_to?.id === u.id);
+  const isActive = ownedShops.length > 0;
+  const required = ownedShops.reduce((s,sh)=>s+Number(sh.shop_deposit||0),0);
+  const userDeposits = deposits.filter(d => d.user_id === u.id);
+  const paid = userDeposits.reduce((s,d)=>s+Number(d.amount||0),0);
+  const remaining = Math.max(0, required - paid);
+  const pct = required > 0 ? Math.min(100, Math.round(paid/required*100)) : (paid>0 ? 100 : 0);
+  return { user:u, ownedShops, isActive, required, paid, remaining, pct, paymentCount: userDeposits.length };
+}
+
+function depositsByTenantHtml(){
+  const users = (state.cache.users || []).filter(u => u.role === 'tenant');
+  const showInactive = state.deposits.showInactive;
+
+  const rows = users.map(depositTenantStats)
+    .filter(r => showInactive ? true : r.isActive)
+    .sort((a,b)=> b.remaining - a.remaining || a.user.name.localeCompare(b.user.name));
+
+  const toolbar = `
+  <div class="deposit-toolbar">
+    <label class="deposit-toggle"><input type="checkbox" id="depositShowInactive" ${showInactive?'checked':''}> Show inactive tenants (no shops assigned)</label>
+    <span class="filter-count">${rows.length} tenant${rows.length!==1?'s':''}</span>
+  </div>`;
+
+  if (rows.length === 0){
+    return toolbar + emptyStateHtml('No tenants to show', 'Try including inactive tenants, or add a tenant first.', emptyIcon());
+  }
+
+  return toolbar + `
+  <div class="deposit-group-grid">
+    ${rows.map(r => `
+    <div class="card deposit-group-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px;">
+        <div>
+          <div style="font-weight:700; font-size:14.5px;">${escapeHtml(r.user.name)}</div>
+          <div class="mono" style="font-size:12px; color:var(--muted);">${escapeHtml(r.user.mobile)}</div>
+        </div>
+        <span class="pill ${r.isActive?'active-pill':'inactive-pill'}"><span class="pill-dot"></span>${r.isActive?'Active':'Inactive'}</span>
+      </div>
+      <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">${r.ownedShops.map(s=>escapeHtml(s.shop_number)).join(', ') || 'No shops assigned'}</div>
+      <div class="billing-stat-line"><span>Required</span><strong>${currency(r.required)}</strong></div>
+      <div class="billing-stat-line"><span>Paid</span><strong style="color:var(--green-deep);">${currency(r.paid)}</strong></div>
+      <div class="billing-stat-line"><span>Remaining</span><strong style="color:${r.remaining>0?'var(--rust)':'var(--success)'};">${currency(r.remaining)}</strong></div>
+      <div class="deposit-bar-wrap" style="margin-top:8px;"><div class="deposit-bar" style="width:${r.pct}%;"></div></div>
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:4px;">
+        <span>${r.pct}% collected</span><span>${r.paymentCount} payment${r.paymentCount!==1?'s':''}</span>
+      </div>
+      <div style="margin-top:12px;">
+        <button type="button" class="btn btn-ghost btn-sm" data-deposit-record="${r.user.id}">Record deposit</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function depositsByPropertyHtml(){
+  const complexes = state.cache.complexes || [];
+  const shops = state.cache.shops || [];
+  const deposits = state.cache.deposits || [];
+
+  const groups = complexes.map(c => {
+    const cShops = shops.filter(s => s.complex_id === c.id);
+    const occupiedShops = cShops.filter(s => s.assigned_to);
+    const required = cShops.reduce((s,sh)=>s+Number(sh.shop_deposit||0),0);
+    const shopIds = new Set(cShops.map(s=>s.id));
+    const paid = deposits.filter(d => shopIds.has(d.shop_id)).reduce((s,d)=>s+Number(d.amount||0),0);
+    const remaining = Math.max(0, required - paid);
+    const pct = required > 0 ? Math.min(100, Math.round(paid/required*100)) : (paid>0?100:0);
+    return { id:c.id, name:c.name, shopCount:cShops.length, occupiedCount:occupiedShops.length, required, paid, remaining, pct };
+  }).sort((a,b)=> b.remaining - a.remaining);
+
+  if (groups.length === 0) return emptyStateHtml('No properties yet', 'Add a complex and assign shops to start tracking deposits.', emptyIcon());
+
+  return `
+  <div class="deposit-group-grid">
+    ${groups.map(g => `
+    <div class="card deposit-group-card">
+      <div style="font-weight:700; font-size:14.5px; margin-bottom:4px;">${escapeHtml(g.name)}</div>
+      <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">${g.occupiedCount}/${g.shopCount} shops occupied</div>
+      <div class="billing-stat-line"><span>Required</span><strong>${currency(g.required)}</strong></div>
+      <div class="billing-stat-line"><span>Paid</span><strong style="color:var(--green-deep);">${currency(g.paid)}</strong></div>
+      <div class="billing-stat-line"><span>Remaining</span><strong style="color:${g.remaining>0?'var(--rust)':'var(--success)'};">${currency(g.remaining)}</strong></div>
+      <div class="deposit-bar-wrap" style="margin-top:8px;"><div class="deposit-bar" style="width:${g.pct}%;"></div></div>
+      <div style="font-size:11px; color:var(--muted); margin-top:4px;">${g.pct}% collected</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function depositsAllPaymentsHtml(){
+  const deposits = state.cache.deposits || [];
+  const users = state.cache.users || [];
   const userName = (id) => users.find(u=>u.id===id)?.name || `#${id}`;
 
   return `
   <div class="toolbar"><input class="search-input" id="tableSearch" placeholder="Search deposits…"></div>
-  ${deposits.length === 0 ? emptyStateHtml('No deposit payments', 'Record the first deposit payment using the button above.', emptyIcon()) : `
+  ${deposits.length === 0 ? emptyStateHtml('No deposit payments', 'Record the first deposit payment using "Record deposit" in the By tenant view.', emptyIcon()) : `
   <div class="table-wrap">
     <table>
       <thead><tr><th>Tenant</th><th>Shop</th><th>Complex</th><th class="num">Amount</th><th>Date</th><th>Remarks</th><th></th></tr></thead>
@@ -37,12 +174,18 @@ async function depositsView(){
   </div>`}`;
 }
 
-function attachDepositHandlers(){
+function attachDepositsBodyHandlers(){
+  document.getElementById('depositShowInactive')?.addEventListener('change', (e) => {
+    state.deposits.showInactive = e.target.checked;
+    renderDepositsBody();
+  });
+  document.querySelectorAll('[data-deposit-record]').forEach(btn => btn.addEventListener('click', () => openDepositModal(Number(btn.dataset.depositRecord))));
   document.querySelectorAll('[data-edit-deposit]').forEach(btn => btn.addEventListener('click', () => openEditDepositModal(Number(btn.dataset.editDeposit))));
   document.querySelectorAll('[data-delete-deposit]').forEach(btn => btn.addEventListener('click', () => {
     const dp = (state.cache.deposits || []).find(x => x.id === Number(btn.dataset.deleteDeposit));
     if (dp) confirmDeleteDeposit(dp);
   }));
+  attachSearchFilter();
 }
 
 /* ---- Edit / delete a single deposit payment ---- */
@@ -117,7 +260,7 @@ function confirmDeleteDeposit(dp){
 }
 
 /* ---- Deposit Payment Modal ---- */
-async function openDepositModal(){
+async function openDepositModal(presetUserId){
   const [users, shops, complexes] = await Promise.all([
     ensureLoaded('users','/api/user'),
     ensureLoaded('shops','/api/shop'),
@@ -132,7 +275,7 @@ async function openDepositModal(){
         <label for="dpTenant">Tenant</label>
         <select id="dpTenant">
           <option value="">— select tenant —</option>
-          ${tenants.map(u=>`<option value="${u.id}">${escapeHtml(u.name)} · ${escapeHtml(u.mobile)}</option>`).join('')}
+          ${tenants.map(u=>`<option value="${u.id}" ${presetUserId==u.id?'selected':''}>${escapeHtml(u.name)} · ${escapeHtml(u.mobile)}</option>`).join('')}
         </select>
         ${fieldErrorHtml('dpTenantErr')}
       </div>
@@ -197,6 +340,10 @@ async function openDepositModal(){
       if (!document.getElementById('dpAmount').value) document.getElementById('dpAmount').value = Number(shopDep?.remaining_deposit || 0).toFixed(2);
     } catch(e){ infoEl.style.display='none'; }
   });
+
+  if (presetUserId){
+    document.getElementById('dpTenant').dispatchEvent(new Event('change'));
+  }
 
   document.getElementById('saveBtn').addEventListener('click', async () => {
     const uid = Number(document.getElementById('dpTenant').value);
