@@ -20,6 +20,64 @@ document.getElementById('menuToggle').addEventListener('click', () => {
 sidebarScrim.addEventListener('click', closeSidebar);
 function closeSidebar(){ sidebar.classList.remove('open'); sidebarScrim.classList.remove('show'); }
 
+/* ================================================================
+   Sidebar module groups — expand/collapse (Property, People,
+   Finance, Insights), persisted per browser via localStorage so it
+   stays the way the admin left it next time they sign in.
+   ================================================================ */
+const NAV_COLLAPSE_KEY = 'tms_admin_nav_collapsed';
+function getCollapsedGroups(){
+  try { return JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveCollapsedGroups(list){
+  try { localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(list)); } catch (e) {}
+}
+function updateCollapseAllBtn(){
+  const btn = document.getElementById('navCollapseAllBtn');
+  const text = document.getElementById('navCollapseAllText');
+  if (!btn) return;
+  const groups = document.querySelectorAll('.nav-group[data-group]');
+  const allCollapsed = groups.length > 0 && Array.from(groups).every(g => g.classList.contains('collapsed'));
+  btn.classList.toggle('all-collapsed', allCollapsed);
+  if (text) text.textContent = allCollapsed ? 'Expand all' : 'Collapse all';
+}
+
+(function initNavCollapse(){
+  const collapsed = getCollapsedGroups();
+  document.querySelectorAll('.nav-group[data-group]').forEach(g => {
+    if (collapsed.includes(g.dataset.group)) g.classList.add('collapsed');
+  });
+  updateCollapseAllBtn();
+})();
+
+document.querySelectorAll('[data-group-toggle]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const groupEl = btn.closest('.nav-group');
+    const isCollapsed = groupEl.classList.toggle('collapsed');
+    const collapsed = getCollapsedGroups();
+    const name = groupEl.dataset.group;
+    const idx = collapsed.indexOf(name);
+    if (isCollapsed && idx === -1) collapsed.push(name);
+    else if (!isCollapsed && idx !== -1) collapsed.splice(idx, 1);
+    saveCollapsedGroups(collapsed);
+    updateCollapseAllBtn();
+  });
+});
+
+document.getElementById('navCollapseAllBtn')?.addEventListener('click', () => {
+  const groups = document.querySelectorAll('.nav-group[data-group]');
+  const allCollapsed = Array.from(groups).every(g => g.classList.contains('collapsed'));
+  const collapseNow = !allCollapsed;
+  const collapsed = [];
+  groups.forEach(g => {
+    g.classList.toggle('collapsed', collapseNow);
+    if (collapseNow) collapsed.push(g.dataset.group);
+  });
+  saveCollapsedGroups(collapsed);
+  updateCollapseAllBtn();
+});
+
 const viewMeta = {
   dashboard: { title:'Dashboard', crumb:'Overview of your portfolio', action:null },
   complexes: { title:'Complexes', crumb:'Buildings and properties you manage', action:'Add complex' },
@@ -38,6 +96,14 @@ document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
 async function navigateTo(view){
   state.view = view;
   document.querySelectorAll('.nav-item[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  // If this view's sidebar group is collapsed, expand it so the active item is visible.
+  const activeBtn = document.querySelector(`.nav-item[data-view="${view}"]`);
+  const parentGroup = activeBtn ? activeBtn.closest('.nav-group[data-group]') : null;
+  if (parentGroup && parentGroup.classList.contains('collapsed')) {
+    parentGroup.classList.remove('collapsed');
+    saveCollapsedGroups(getCollapsedGroups().filter(n => n !== parentGroup.dataset.group));
+    updateCollapseAllBtn();
+  }
   const meta = viewMeta[view];
   document.getElementById('viewTitle').textContent = meta.title;
   document.getElementById('viewCrumb').textContent = meta.crumb;
