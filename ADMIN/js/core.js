@@ -22,9 +22,17 @@ const state = {
   cache: { complexes: [], shops: [], users: [], bills: [], payments: [] },
   loaded: { complexes:false, shops:false, users:false, bills:false, payments:false },
   billing: {
+    section: 'view', // 'add' | 'manage' | 'view' — the three Finance section tabs
+    manageTab: 'bills', // 'bills' | 'payments' — sub-tab within Manage
     filters: { status: [], complexIds: [], typeSet: [], years: [], months: [], search: '' },
+    paymentFilters: { complexId: '', method: '', year: '', month: '', search: '' },
     nav: { mode: 'tenant', complexId: null, userId: null, year: null, month: null, tab: 'bills' },
     sort: 'newest',
+    paymentSort: 'newest',
+  },
+  deposits: {
+    mode: 'tenant', // 'tenant' | 'property' | 'all'
+    showInactive: true,
   },
 };
 // Set by dashboard "at a glance" cards to auto-apply a filter when the Bills view loads next.

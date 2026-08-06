@@ -1,16 +1,22 @@
 /* ================================================================
-   ADMIN/js/billing.js — split from the old ADMIN/script.js
-   Contains: the whole "Bills & Payments" feature — grouped
-   Complex → Tenant → Year → Month, a multi-select filter bar that
-   switches to a flat filtered list, the Dues overview mode
-   (portfolio-wide arrears ledger), and the bill/payment edit &
-   delete modals. This is the biggest single module — everything
-   here is specific to one nav item ("Bills & Payments").
+   ADMIN/js/billing.js — split from the old ADMIN/script.js, then
+   redesigned into a single "Finance" section with three clear
+   parts so admin/edit/delete/view work never requires scanning
+   this whole file:
+
+     1. ADD    — billingAddSectionHtml()      — create a bill/payment
+     2. MANAGE — billingManageSectionHtml()   — flat, filterable,
+                 sortable list of every bill/payment, edit + delete
+     3. VIEW   — billingBrowseHtml() + co.    — browse tenant-wise or
+                 property-wise, drill Year → Month (calendar-style
+                 tiles) → date, or switch to the simplified Dues
+                 overview. Tenant/property quick-search included.
+
+   The bill/payment edit+delete modals and the Dues overview data
+   functions are unchanged in spirit from the original file — only
+   their presentation and entry points moved.
    ================================================================ */
-/* ================================================================
-   BILLING VIEW (Bills & Payments) — grouped Complex → Tenant → Year → Month,
-   with a multi-select filter bar that switches to a flat filtered list.
-   ================================================================ */
+
 const BILL_STATUS_OPTIONS = [
   { value:'pending',   label:'Pending' },
   { value:'partial',   label:'Partial' },
@@ -22,7 +28,11 @@ const MONTH_OPTIONS = Array.from({length:12},(_,i)=>({ value:String(i+1), label:
 const MONTH_NAMES = MONTH_OPTIONS.map(m=>m.label);
 
 function rupeeIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3c3 0 5-1.5 5-5"/></svg>`; }
+function calendarIcon(){ return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`; }
 
+/* ================================================================
+   DATA HELPERS
+   ================================================================ */
 function billingEnrichedData(){
   const bills = state.cache.bills || [];
   const payments = state.cache.payments || [];
@@ -54,6 +64,29 @@ function billingEnrichedData(){
   return { list, shops, users, complexes };
 }
 
+function billingPaymentsEnriched(){
+  const payments = state.cache.payments || [];
+  const bills = state.cache.bills || [];
+  const shops = state.cache.shops || [];
+  const users = state.cache.users || [];
+  const complexes = state.cache.complexes || [];
+  const billById = Object.fromEntries(bills.map(b=>[b.id,b]));
+  const shopById = Object.fromEntries(shops.map(s=>[s.id,s]));
+  const userById = Object.fromEntries(users.map(u=>[u.id,u]));
+  const complexById = Object.fromEntries(complexes.map(c=>[c.id,c]));
+  return payments.map(p => {
+    const bill = billById[p.bill_id];
+    const shop = bill ? shopById[bill.shop_id] : null;
+    const user = bill ? userById[bill.user_id] : null;
+    const cid = shop ? (shop.complex_id ?? null) : null;
+    return {
+      ...p, bill, shop, user,
+      complexId: cid,
+      complexName: cid != null ? (complexById[cid]?.name || `#${cid}`) : 'Unassigned',
+    };
+  });
+}
+
 function billingActiveFiltersCount(){
   const f = state.billing.filters;
   return f.status.length + f.complexIds.length + f.typeSet.length + f.years.length + f.months.length + (f.search.trim() ? 1 : 0);
@@ -68,6 +101,19 @@ function billMatchesFilters(b, f){
   if (f.search.trim()){
     const q = f.search.trim().toLowerCase();
     const hay = `${b.user?.name||''} ${b.user?.mobile||''} ${b.shop?.shop_number||''} ${b.complexName} ${b.bill_type} ${b.description||''} #${b.id}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+function paymentMatchesFilters(p, f){
+  if (f.complexId && String(p.complexId) !== String(f.complexId)) return false;
+  if (f.method && p.payment_method !== f.method) return false;
+  if (f.year && String(p.payment_date ? new Date(p.payment_date).getFullYear() : '') !== String(f.year)) return false;
+  if (f.month && String(p.payment_date ? new Date(p.payment_date).getMonth()+1 : '') !== String(f.month)) return false;
+  if (f.search && f.search.trim()){
+    const q = f.search.trim().toLowerCase();
+    const hay = `${p.user?.name||''} ${p.user?.mobile||''} ${p.shop?.shop_number||''} ${p.complexName} ${p.payment_method||''} #${p.id} #${p.bill_id}`.toLowerCase();
     if (!hay.includes(q)) return false;
   }
   return true;
@@ -126,6 +172,9 @@ function initMsFields(ids, onChange){
   }
 }
 
+/* ================================================================
+   TOP-LEVEL: three-tab Finance section (Add / Manage / View)
+   ================================================================ */
 async function billingView(){
   await Promise.all([
     ensureLoaded('bills','/api/bill'),
@@ -136,11 +185,23 @@ async function billingView(){
   ]);
   updatePendingBadge(state.cache.bills.filter(b=>b.status!=='paid').length);
 
-  // Apply any filter requested from the dashboard's "at a glance" cards
+  return `
+  <div class="billing-section-tabs" id="billingSectionTabs">
+    <button type="button" class="billing-section-tab ${state.billing.section==='add'?'active':''}" data-billing-section="add"><span class="bst-num">1</span> Add bill &amp; payment</button>
+    <button type="button" class="billing-section-tab ${state.billing.section==='manage'?'active':''}" data-billing-section="manage"><span class="bst-num">2</span> Edit &amp; delete</button>
+    <button type="button" class="billing-section-tab ${state.billing.section==='view'?'active':''}" data-billing-section="view"><span class="bst-num">3</span> View bills &amp; payments</button>
+  </div>
+  <div id="billingSectionBody"></div>
+  `;
+}
+
+function attachBillingHandlers(){
   if (pendingBillsViewFilter) {
     const g = pendingBillsViewFilter;
     const f = state.billing.filters;
     const now = new Date();
+    state.billing.section = 'manage';
+    state.billing.manageTab = 'bills';
     if (g === 'overdue') f.status = ['overdue'];
     else if (g === 'partial') f.status = ['partial'];
     else if (g === 'paid') f.status = ['paid'];
@@ -149,6 +210,95 @@ async function billingView(){
     pendingBillsViewFilter = null;
   }
 
+  document.querySelectorAll('[data-billing-section]').forEach(btn => btn.addEventListener('click', () => {
+    if (btn.dataset.billingSection === state.billing.section) return;
+    state.billing.section = btn.dataset.billingSection;
+    renderBillingSectionBody();
+  }));
+
+  renderBillingSectionBody();
+}
+
+function renderBillingSectionBody(){
+  document.querySelectorAll('[data-billing-section]').forEach(b => b.classList.toggle('active', b.dataset.billingSection === state.billing.section));
+  const container = document.getElementById('billingSectionBody');
+  if (!container) return;
+  if (state.billing.section === 'add'){
+    container.innerHTML = billingAddSectionHtml();
+    attachBillingAddHandlers();
+  } else if (state.billing.section === 'manage'){
+    container.innerHTML = billingManageSectionHtml();
+    attachBillingManageHandlers();
+  } else {
+    container.innerHTML = `<div id="billingResults"></div>`;
+    renderBillingResults();
+  }
+}
+
+/* ================================================================
+   1. ADD
+   ================================================================ */
+function billingAddSectionHtml(){
+  return `
+  <div class="billing-add-intro">Create a new bill or log a payment you've received — it shows up immediately in <strong>View bills &amp; payments</strong> and can be edited any time from <strong>Edit &amp; delete</strong>.</div>
+  <div class="billing-add-grid">
+    <button type="button" class="card billing-add-card" data-add-action="bill">
+      <div class="billing-add-icon">${rupeeIcon()}</div>
+      <div class="billing-add-title">Add bill</div>
+      <div class="billing-add-sub">Rent, electricity, maintenance, or any other charge — for one shop or several at once.</div>
+    </button>
+    <button type="button" class="card billing-add-card" data-add-action="payment">
+      <div class="billing-add-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12V8H6a2 2 0 010-4h12v4"/><path d="M4 6v12a2 2 0 002 2h14v-4"/><path d="M18 12a2 2 0 000 4h4v-4z"/></svg></div>
+      <div class="billing-add-title">Record payment</div>
+      <div class="billing-add-sub">Log money received — auto-allocate across the tenant's oldest dues, or apply to one bill.</div>
+    </button>
+    <button type="button" class="card billing-add-card" data-add-action="rent-bills">
+      <div class="billing-add-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div>
+      <div class="billing-add-title">Generate rent bills</div>
+      <div class="billing-add-sub">Run the monthly rent generator for every tenant with auto-billing turned on.</div>
+    </button>
+  </div>`;
+}
+
+function attachBillingAddHandlers(){
+  document.querySelectorAll('[data-add-action]').forEach(btn => btn.addEventListener('click', () => {
+    const action = btn.dataset.addAction;
+    if (action === 'bill') openBillModal();
+    else if (action === 'payment') openPaymentModal();
+    else if (action === 'rent-bills') openGenerateRentBillsModal();
+  }));
+}
+
+/* ================================================================
+   2. MANAGE — flat, filterable, sortable — edit/delete lives here
+   ================================================================ */
+function billingManageSectionHtml(){
+  const tab = state.billing.manageTab || 'bills';
+  return `
+  <div class="billing-tab-bar" style="margin-bottom:16px;">
+    <button type="button" class="billing-tab-btn ${tab==='bills'?'active':''}" data-manage-tab="bills">Bills</button>
+    <button type="button" class="billing-tab-btn ${tab==='payments'?'active':''}" data-manage-tab="payments">Payments</button>
+  </div>
+  <div id="billingManageResults"></div>`;
+}
+
+function attachBillingManageHandlers(){
+  document.querySelectorAll('[data-manage-tab]').forEach(btn => btn.addEventListener('click', () => {
+    if (btn.dataset.manageTab === state.billing.manageTab) return;
+    state.billing.manageTab = btn.dataset.manageTab;
+    renderBillingSectionBody();
+  }));
+  renderBillingManageResults();
+}
+
+function renderBillingManageResults(){
+  const container = document.getElementById('billingManageResults');
+  if (!container) return;
+  container.innerHTML = state.billing.manageTab === 'payments' ? billingManagePaymentsHtml() : billingManageBillsHtml();
+  attachBillingManageResultHandlers();
+}
+
+function billingManageBillsHtml(){
   const { list: allBills, complexes } = billingEnrichedData();
   const billTypes = [...new Set(allBills.map(b=>b.bill_type).filter(Boolean))].sort();
   const years = [...new Set(allBills.map(b=>b.year).filter(Boolean))].sort((a,b)=>b-a);
@@ -156,18 +306,20 @@ async function billingView(){
     ...complexes.map(c=>({ value:String(c.id), label:c.name })),
     ...(allBills.some(b=>b.complexId==null) ? [{ value:'null', label:'Unassigned' }] : []),
   ];
+  const f = state.billing.filters;
+  const matched = allBills.filter(b => billMatchesFilters(b, f));
 
   return `
   <div class="filter-bar" id="billingFilterBar">
     <div class="field search-full">
       <label>Search</label>
-      <input class="search-input" id="bfSearch" placeholder="Tenant name, shop #, complex, bill #…" value="${escapeHtml(state.billing.filters.search)}" style="max-width:100%; min-width:0; width:100%;">
+      <input class="search-input" id="bfSearch" placeholder="Tenant name, shop #, complex, bill #…" value="${escapeHtml(f.search)}" style="max-width:100%; min-width:0; width:100%;">
     </div>
-    ${msFieldHtml('bfStatus','Status', BILL_STATUS_OPTIONS, state.billing.filters.status)}
-    ${msFieldHtml('bfComplex','Complex', complexOptions, state.billing.filters.complexIds)}
-    ${msFieldHtml('bfType','Type', billTypes.map(t=>({value:t,label:t})), state.billing.filters.typeSet)}
-    ${msFieldHtml('bfYear','Year', years.map(y=>({value:String(y),label:String(y)})), state.billing.filters.years)}
-    ${msFieldHtml('bfMonth','Month', MONTH_OPTIONS, state.billing.filters.months)}
+    ${msFieldHtml('bfStatus','Status', BILL_STATUS_OPTIONS, f.status)}
+    ${msFieldHtml('bfComplex','Complex', complexOptions, f.complexIds)}
+    ${msFieldHtml('bfType','Type', billTypes.map(t=>({value:t,label:t})), f.typeSet)}
+    ${msFieldHtml('bfYear','Year', years.map(y=>({value:String(y),label:String(y)})), f.years)}
+    ${msFieldHtml('bfMonth','Month', MONTH_OPTIONS, f.months)}
     <div class="field">
       <label>Sort</label>
       <select id="bfSort" class="sort-select">
@@ -180,73 +332,127 @@ async function billingView(){
       </select>
     </div>
     <button class="btn btn-ghost filter-clear-btn" id="bfClear">Clear filters</button>
-    <span class="filter-count" id="bfCount"></span>
+    <span class="filter-count" id="bfCount">${matched.length} record${matched.length!==1?'s':''}</span>
   </div>
-  <div class="billing-toolbar">
-    <button class="btn btn-primary btn-sm" id="bfAddBill">+ Add bill</button>
-    <button class="btn btn-ghost btn-sm" id="bfRecordPayment">Record payment</button>
-    <button class="btn btn-ghost btn-sm" id="bfGenerateRent">⟳ Generate rent bills…</button>
-  </div>
-  <div id="billingResults"></div>
-  `;
+  ${billingFilteredListHtml(matched)}`;
 }
 
-function attachBillingHandlers(){
-  document.getElementById('bfSort').value = state.billing.sort;
+function billingManagePaymentsHtml(){
+  const allPayments = billingPaymentsEnriched();
+  const complexes = state.cache.complexes || [];
+  const years = [...new Set(allPayments.map(p=>p.payment_date ? new Date(p.payment_date).getFullYear() : null).filter(Boolean))].sort((a,b)=>b-a);
+  const methods = [...new Set(allPayments.map(p=>p.payment_method).filter(Boolean))].sort();
+  const pf = state.billing.paymentFilters;
+  const matched = allPayments.filter(p => paymentMatchesFilters(p, pf));
 
+  return `
+  <div class="filter-bar" id="paymentFilterBar">
+    <div class="field search-full">
+      <label>Search</label>
+      <input class="search-input" id="pfSearch" placeholder="Tenant, shop #, complex, bill #…" value="${escapeHtml(pf.search)}" style="max-width:100%; min-width:0; width:100%;">
+    </div>
+    <div class="field">
+      <label>Complex</label>
+      <select id="pfComplex">
+        <option value="">All complexes</option>
+        ${complexes.map(c=>`<option value="${c.id}" ${String(pf.complexId)===String(c.id)?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>Method</label>
+      <select id="pfMethod">
+        <option value="">All methods</option>
+        ${methods.map(m=>`<option value="${escapeHtml(m)}" ${pf.method===m?'selected':''}>${escapeHtml(m)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>Year</label>
+      <select id="pfYear">
+        <option value="">All years</option>
+        ${years.map(y=>`<option value="${y}" ${String(pf.year)===String(y)?'selected':''}>${y}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>Month</label>
+      <select id="pfMonth">
+        <option value="">All months</option>
+        ${MONTH_OPTIONS.map(m=>`<option value="${m.value}" ${String(pf.month)===String(m.value)?'selected':''}>${m.label}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label>Sort</label>
+      <select id="pfSort" class="sort-select">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="amount-high">Highest amount</option>
+        <option value="amount-low">Lowest amount</option>
+        <option value="tenant">Tenant A-Z</option>
+      </select>
+    </div>
+    <button class="btn btn-ghost filter-clear-btn" id="pfClear">Clear filters</button>
+    <span class="filter-count">${matched.length} record${matched.length!==1?'s':''}</span>
+  </div>
+  ${billingPaymentsListHtml(matched)}`;
+}
+
+function attachBillingManageResultHandlers(){
+  if (state.billing.manageTab === 'payments'){
+    const pf = state.billing.paymentFilters;
+    const sortSel = document.getElementById('pfSort');
+    if (sortSel) sortSel.value = state.billing.paymentSort;
+    document.getElementById('pfComplex')?.addEventListener('change', (e) => { pf.complexId = e.target.value; renderBillingManageResults(); });
+    document.getElementById('pfMethod')?.addEventListener('change', (e) => { pf.method = e.target.value; renderBillingManageResults(); });
+    document.getElementById('pfYear')?.addEventListener('change', (e) => { pf.year = e.target.value; renderBillingManageResults(); });
+    document.getElementById('pfMonth')?.addEventListener('change', (e) => { pf.month = e.target.value; renderBillingManageResults(); });
+    let searchTimer;
+    document.getElementById('pfSearch')?.addEventListener('input', (e) => {
+      clearTimeout(searchTimer);
+      const val = e.target.value;
+      searchTimer = setTimeout(() => { pf.search = val; renderBillingManageResults(); }, 250);
+    });
+    document.getElementById('pfSort')?.addEventListener('change', (e) => {
+      state.billing.paymentSort = e.target.value;
+      renderBillingManageResults();
+    });
+    document.getElementById('pfClear')?.addEventListener('click', () => {
+      state.billing.paymentFilters = { complexId:'', method:'', year:'', month:'', search:'' };
+      renderBillingManageResults();
+    });
+    document.querySelectorAll('[data-edit-payment]').forEach(btn => btn.addEventListener('click', () => openEditPaymentModal(Number(btn.dataset.editPayment))));
+    document.querySelectorAll('[data-delete-payment]').forEach(btn => btn.addEventListener('click', () => {
+      const pay = state.cache.payments.find(x => x.id === Number(btn.dataset.deletePayment));
+      if (pay) confirmDeletePayment(pay);
+    }));
+    return;
+  }
+
+  const sortSel = document.getElementById('bfSort');
+  if (sortSel) sortSel.value = state.billing.sort;
   initMsFields(['bfStatus','bfComplex','bfType','bfYear','bfMonth'], (id, values) => {
     const key = { bfStatus:'status', bfComplex:'complexIds', bfType:'typeSet', bfYear:'years', bfMonth:'months' }[id];
     state.billing.filters[key] = values;
-    renderBillingResults();
+    renderBillingManageResults();
   });
-
   let searchTimer;
-  document.getElementById('bfSearch').addEventListener('input', (e) => {
+  document.getElementById('bfSearch')?.addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     const val = e.target.value;
-    searchTimer = setTimeout(() => { state.billing.filters.search = val; renderBillingResults(); }, 250);
+    searchTimer = setTimeout(() => { state.billing.filters.search = val; renderBillingManageResults(); }, 250);
   });
-
-  document.getElementById('bfSort').addEventListener('change', (e) => {
+  document.getElementById('bfSort')?.addEventListener('change', (e) => {
     state.billing.sort = e.target.value;
-    renderBillingResults();
+    renderBillingManageResults();
   });
-
-  document.getElementById('bfClear').addEventListener('click', () => {
+  document.getElementById('bfClear')?.addEventListener('click', () => {
     state.billing.filters = { status:[], complexIds:[], typeSet:[], years:[], months:[], search:'' };
-    renderView('billing');
+    renderBillingManageResults();
   });
-
-  document.getElementById('bfAddBill').addEventListener('click', () => openBillModal(state.billing.nav.userId));
-  document.getElementById('bfRecordPayment').addEventListener('click', () => {
-    if (state.billing.nav.userId){
-      renderPaymentForm({ preselectedComplexId: state.billing.nav.complexId==='null'?null:Number(state.billing.nav.complexId), preselectedUserId: Number(state.billing.nav.userId) });
-    } else {
-      openPaymentModal();
-    }
-  });
-  document.getElementById('bfGenerateRent').addEventListener('click', openGenerateRentBillsModal);
-
-  renderBillingResults();
-}
-
-function renderBillingResults(){
-  const container = document.getElementById('billingResults');
-  if (!container) return;
-  const { list: allBills } = billingEnrichedData();
-  const f = state.billing.filters;
-  const activeFilters = billingActiveFiltersCount() > 0;
-  const countEl = document.getElementById('bfCount');
-
-  if (activeFilters){
-    const matched = allBills.filter(b => billMatchesFilters(b, f));
-    if (countEl) countEl.textContent = matched.length + ' record' + (matched.length!==1?'s':'');
-    container.innerHTML = billingFilteredListHtml(matched);
-  } else {
-    if (countEl) countEl.textContent = '';
-    container.innerHTML = billingBrowseHtml(allBills);
-  }
-  attachBillingResultHandlers();
+  document.querySelectorAll('[data-record-payment]').forEach(btn => btn.addEventListener('click', () => openRecordPaymentModal(Number(btn.dataset.recordPayment))));
+  document.querySelectorAll('[data-edit-bill]').forEach(btn => btn.addEventListener('click', () => openEditBillModal(Number(btn.dataset.editBill))));
+  document.querySelectorAll('[data-delete-bill]').forEach(btn => btn.addEventListener('click', () => {
+    const bill = state.cache.bills.find(x => x.id === Number(btn.dataset.deleteBill));
+    if (bill) confirmDeleteBill(bill);
+  }));
 }
 
 function billingFilteredListHtml(bills){
@@ -291,9 +497,57 @@ function billingFilteredListHtml(bills){
   </div>`;
 }
 
+function billingPaymentsListHtml(payments){
+  if (payments.length === 0){
+    return emptyStateHtml('No payments match your filters', 'Try adjusting or clearing filters.', emptyIcon());
+  }
+  const sort = state.billing.paymentSort;
+  const sorted = [...payments].sort((a,b) => {
+    if (sort==='newest') return new Date(b.payment_date) - new Date(a.payment_date);
+    if (sort==='oldest') return new Date(a.payment_date) - new Date(b.payment_date);
+    if (sort==='amount-high') return Number(b.amount) - Number(a.amount);
+    if (sort==='amount-low') return Number(a.amount) - Number(b.amount);
+    if (sort==='tenant') return (a.user?.name||'').localeCompare(b.user?.name||'');
+    return 0;
+  });
+  return `
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Tenant</th><th>Shop</th><th>Complex</th><th>Bill</th><th class="num">Amount</th><th>Method</th><th>Remarks</th><th></th></tr></thead>
+      <tbody>
+        ${sorted.map(p => `
+        <tr>
+          <td>${dateFmt(p.payment_date)}</td>
+          <td>${escapeHtml(p.user?.name || (p.bill ? `#${p.bill.user_id}` : '—'))}</td>
+          <td class="mono">${escapeHtml(p.shop?.shop_number || '—')}</td>
+          <td>${escapeHtml(p.complexName)}</td>
+          <td class="mono">#${p.bill_id}${p.bill ? ' · '+escapeHtml(p.bill.bill_type) : ''}</td>
+          <td class="num">${currency(p.amount)}</td>
+          <td>${escapeHtml(p.payment_method)}</td>
+          <td>${escapeHtml(p.remarks || '—')}</td>
+          <td><div class="row-actions">
+            <button class="btn-icon" data-edit-payment="${p.id}" aria-label="Edit payment">${editIcon()}</button>
+            <button class="btn-icon" data-delete-payment="${p.id}" aria-label="Delete payment">${trashIcon()}</button>
+          </div></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ================================================================
+   3. VIEW — browse tenant-wise / property-wise / dues overview
+   ================================================================ */
+function renderBillingResults(){
+  const container = document.getElementById('billingResults');
+  if (!container) return;
+  const { list: allBills } = billingEnrichedData();
+  container.innerHTML = billingBrowseHtml(allBills);
+  attachBillingResultHandlers();
+}
+
 function billingModeSwitcherHtml(){
   const nav = state.billing.nav;
-  if (nav.complexId || nav.userId) return '';
   const mode = nav.mode || 'tenant';
   return `
   <div class="billing-mode-switch">
@@ -301,6 +555,16 @@ function billingModeSwitcherHtml(){
     <button type="button" class="billing-mode-btn ${mode==='property'?'active':''}" data-billing-mode="property">Property wise</button>
     <button type="button" class="billing-mode-btn ${mode==='dues'?'active':''}" data-billing-mode="dues">Dues overview</button>
   </div>`;
+}
+
+function billingViewSearchHtml(){
+  const nav = state.billing.nav;
+  const mode = nav.mode || 'tenant';
+  if (mode === 'dues') return '';
+  const atPicker = (mode === 'tenant' && !nav.userId) || (mode === 'property' && !nav.complexId) || (mode === 'property' && !!nav.complexId && !nav.userId);
+  if (!atPicker) return '';
+  const placeholder = (mode === 'property' && !nav.complexId) ? 'Search property…' : 'Search tenant by name or mobile…';
+  return `<div style="margin-bottom:14px; max-width:340px;"><input type="text" id="bvSearch" class="search-input" placeholder="${escapeHtml(placeholder)}" style="width:100%;"></div>`;
 }
 
 function billingBreadcrumbHtml(){
@@ -366,7 +630,7 @@ function billingComplexPickHtml(allBills){
   return `
   <div class="billing-card-grid">
     ${groups.map(g => `
-    <button type="button" class="card complex-stat-card billing-pick-card" data-drill-complex="${g.id}">
+    <button type="button" class="card complex-stat-card billing-pick-card" data-drill-complex="${g.id}" data-search="${escapeHtml(g.name)}">
       <div class="c-name">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
         ${escapeHtml(g.name)}
@@ -409,7 +673,7 @@ function billingTenantPickForComplexHtml(allBills, complexIdVal){
       <thead><tr><th>Tenant</th><th class="num">Bills</th><th class="num">Pending</th><th class="num">Partial</th><th class="num">Paid</th><th></th></tr></thead>
       <tbody>
         ${rows.map(r => `
-        <tr class="billing-pick-row" data-drill-user="${r.id}">
+        <tr class="billing-pick-row" data-drill-user="${r.id}" data-search="${escapeHtml(r.name+' '+r.mobile)}">
           <td><strong>${escapeHtml(r.name)}</strong><div class="mono" style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
           <td class="num">${r.billCount}</td>
           <td class="num" style="color:${r.pending>0?'var(--rust)':'inherit'};">${currency(r.pending)}</td>
@@ -447,7 +711,7 @@ function billingTenantPickHtml(allBills){
       <thead><tr><th>Tenant</th><th class="num">Properties</th><th class="num">Bills</th><th class="num">Billed</th><th class="num">Received</th><th class="num">Pending</th><th></th></tr></thead>
       <tbody>
         ${rows.map(r => `
-        <tr class="billing-pick-row" data-drill-user="${r.id}">
+        <tr class="billing-pick-row" data-drill-user="${r.id}" data-search="${escapeHtml(r.name+' '+r.mobile)}">
           <td><strong>${escapeHtml(r.name)}</strong><div class="mono" style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
           <td class="num">${r.propertyCount}</td>
           <td class="num">${r.billCount}</td>
@@ -501,6 +765,7 @@ function billingBrowseHtml(allBills){
   const users = state.cache.users;
   const mode = nav.mode || 'tenant';
   const modeSwitcher = billingModeSwitcherHtml();
+  const searchBox = billingViewSearchHtml();
 
   if (mode === 'dues'){
     return modeSwitcher + billingDuesOverviewHtml(allBills);
@@ -510,18 +775,20 @@ function billingBrowseHtml(allBills){
 
   if (mode === 'tenant'){
     if (!nav.userId){
-      return modeSwitcher + crumb + billingTenantPickHtml(allBills);
+      return modeSwitcher + searchBox + crumb + billingTenantPickHtml(allBills);
     }
     if (!nav.complexId){
-      return modeSwitcher + crumb + billingPropertyPickHtml(allBills, Number(nav.userId));
+      const tenant = users.find(u=>u.id===Number(nav.userId));
+      const statementBtn = `<div class="billing-inline-actions"><button type="button" class="btn btn-ghost btn-sm" data-full-statement="${nav.userId}" data-full-statement-name="${escapeHtml(tenant?.name||'Tenant')}">View full tenant statement</button></div>`;
+      return modeSwitcher + crumb + statementBtn + billingPropertyPickHtml(allBills, Number(nav.userId));
     }
   } else {
     if (!nav.complexId){
-      return modeSwitcher + crumb + billingComplexPickHtml(allBills);
+      return modeSwitcher + searchBox + crumb + billingComplexPickHtml(allBills);
     }
     if (!nav.userId){
       const complexIdVal = nav.complexId === 'null' ? null : Number(nav.complexId);
-      return modeSwitcher + crumb + billingTenantPickForComplexHtml(allBills, complexIdVal);
+      return modeSwitcher + searchBox + crumb + billingTenantPickForComplexHtml(allBills, complexIdVal);
     }
   }
 
@@ -533,13 +800,13 @@ function billingBrowseHtml(allBills){
   if (!nav.year){
     const yrs = [...new Set(tenantBills.map(b=>b.year).filter(Boolean))].sort((a,b)=>b-a);
     if (yrs.length === 0){
-      return crumb + `
+      return modeSwitcher + crumb + `
       <div class="billing-inline-actions">
         <button class="btn btn-primary btn-sm" data-add-bill-for="${userIdVal}">+ Add bill for ${escapeHtml(tenant?.name||'tenant')}</button>
       </div>
       ` + emptyStateHtml('No bills yet for this tenant here', 'Create the first bill to get started.', emptyIcon());
     }
-    return crumb + `
+    return modeSwitcher + crumb + `
     <div class="billing-card-grid billing-year-grid">
       ${yrs.map(y => {
         const yBills = tenantBills.filter(b=>b.year===y);
@@ -569,14 +836,14 @@ function billingBrowseHtml(allBills){
     const remaining = billed - received;
     const selected = nav.month === m;
     return `
-    <button type="button" class="card billing-pick-card billing-month-card ${selected?'selected':''} ${mBills.length===0?'empty':''}" data-drill-month="${m}">
-      <div class="billing-month-name">${name}</div>
+    <button type="button" class="card billing-pick-card billing-month-card calendar-tile ${selected?'selected':''} ${mBills.length===0?'empty':''}" data-drill-month="${m}">
+      <div class="billing-month-name">${calendarIcon()} ${name}</div>
       ${mBills.length ? `
       <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">${mBills.length} bill${mBills.length!==1?'s':''}</div>
       <div class="billing-stat-line small"><span>Billed</span><strong>${currency(billed)}</strong></div>
       <div class="billing-stat-line small"><span>Recv</span><strong style="color:var(--green-deep);">${currency(received)}</strong></div>
       <div class="billing-stat-line small"><span>Rem</span><strong style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></div>
-      ` : `<div style="font-size:12px; color:var(--muted);">—</div>`}
+      ` : `<div style="font-size:12px; color:var(--muted);">No activity</div>`}
     </button>`;
   }).join('');
 
@@ -590,7 +857,7 @@ function billingBrowseHtml(allBills){
     const tab = nav.tab === 'payments' ? 'payments' : 'bills';
 
     detail = `
-    <div class="billing-month-detail">
+    <div class="billing-month-detail calendar-detail">
       <div class="billing-inline-actions">
         <button class="btn btn-primary btn-sm" data-add-bill-for="${userIdVal}">+ Add bill</button>
         <button class="btn btn-ghost btn-sm" data-record-payment-for="${userIdVal}">Record payment</button>
@@ -601,14 +868,17 @@ function billingBrowseHtml(allBills){
         <div class="billing-stat-line"><span>Remaining</span><strong style="color:${remaining>0?'var(--rust)':'var(--success)'};">${currency(remaining)}</strong></div>
       </div>
       <div class="billing-tab-bar">
-        <button type="button" class="billing-tab-btn ${tab==='bills'?'active':''}" data-billing-tab="bills">Bills <span class="billing-tab-count">${mBills.length}</span></button>
-        <button type="button" class="billing-tab-btn ${tab==='payments'?'active':''}" data-billing-tab="payments">Payments <span class="billing-tab-count">${mPayments.length}</span></button>
+        <button type="button" class="billing-tab-btn ${tab==='bills'?'active':''}" data-billing-tab="bills">Bill <span class="billing-tab-count">${mBills.length}</span></button>
+        <button type="button" class="billing-tab-btn ${tab==='payments'?'active':''}" data-billing-tab="payments">Payment <span class="billing-tab-count">${mPayments.length}</span></button>
       </div>
       ${tab === 'bills' ? billingBillsByTypeHtml(mBills) : billingPaymentsByDateHtml(mPayments)}
     </div>`;
   }
 
-  return crumb + `<div class="billing-card-grid billing-month-grid">${monthCards}</div>` + detail;
+  const ledgerBtn = (mode === 'tenant' && tenant) ? `<button class="btn btn-ghost btn-sm" data-download-ledger="${yearVal}" data-ledger-user="${userIdVal}" data-ledger-name="${escapeHtml(tenant.name)}" data-ledger-mobile="${escapeHtml(tenant.mobile||'')}">Download ledger PDF</button>` : '';
+  const yearActions = ledgerBtn ? `<div style="margin-bottom:10px; display:flex; justify-content:flex-end;">${ledgerBtn}</div>` : '';
+
+  return modeSwitcher + crumb + yearActions + `<div class="billing-card-grid billing-month-grid calendar-grid">${monthCards}</div>` + detail;
 }
 
 function billingBillsByTypeHtml(mBills){
@@ -671,7 +941,7 @@ function billingPaymentsByDateHtml(mPayments){
     return `
     <div class="collapsible-section billing-group-section">
       <div class="collapsible-header" onclick="toggleCollapse(this)">
-        <h3>${dateFmt(dateKey)} <span class="billing-group-count">(${pays.length})</span></h3>
+        <h3>${calendarIcon()} ${dateFmt(dateKey)} <span class="billing-group-count">(${pays.length})</span></h3>
         <div class="billing-group-header-right">
           <span class="billing-group-totals"><strong class="mono" style="color:var(--green-deep);">${currency(total)}</strong></span>
           <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
@@ -695,16 +965,10 @@ function billingPaymentsByDateHtml(mPayments){
 }
 
 /* ----------------------------------------------------------------
-   DUES OVERVIEW — a third billing mode: a portfolio-wide (all
-   tenants combined) arrears ledger.
-
-   Year cards  -> previous-years pending, this-year pending,
-                  total billed, received, and total outstanding.
-   Month cards -> the same five numbers scoped to a month, with
-                  "previous" running cumulatively from day one.
-   Month detail -> every bill raised and every payment received
-                  that month, grouped by the shared date, collapsed
-                  by default and expandable per date.
+   DUES OVERVIEW — a third View mode: a portfolio-wide (all tenants
+   combined) arrears ledger, simplified to lead with ONE number
+   (Total outstanding), then a clear before/this-period breakdown,
+   then a billed-vs-received progress bar for the period.
    ---------------------------------------------------------------- */
 function billingDuesBreadcrumbHtml(){
   const nav = state.billing.nav;
@@ -742,19 +1006,36 @@ function billingDuesMonthStats(allBills, allPayments, year, month){
   return { prevPending, thisPending, totalBilled, received, totalPending: prevPending + thisPending };
 }
 
-function billingDuesStatLinesHtml(s, opts){
-  const { small=false, thisLabel='Pending', highlightLast=true } = opts || {};
-  const cls = small ? ' small' : '';
-  const labels = small
-    ? { prev:'Prev', total:'Bill', recv:'Recv', pend:'Due' }
-    : { prev:'Previous dues', total:'Total bill', recv:'Received', pend:'Current pending' };
-  const lastStyle = highlightLast ? ' style="border-top:1px dashed var(--line); margin-top:4px; padding-top:5px;"' : '';
+function billingDuesSummaryCardHtml(s, opts){
+  const { size='normal' } = opts || {};
+  const collectPct = s.totalBilled > 0 ? Math.min(100, Math.round((s.received / s.totalBilled) * 100)) : (s.received > 0 ? 100 : 0);
+  if (size === 'small'){
+    return `
+      <div class="billing-dues-outstanding small">${currency(s.totalPending)}</div>
+      <div class="billing-dues-bar-wrap"><div class="billing-dues-bar" style="width:${collectPct}%;"></div></div>
+      <div class="billing-stat-line small" style="margin-top:4px;"><span>Billed</span><strong>${currency(s.totalBilled)}</strong></div>
+      <div class="billing-stat-line small"><span>Received</span><strong style="color:var(--green-deep);">${currency(s.received)}</strong></div>
+    `;
+  }
   return `
-    <div class="billing-stat-line${cls}"><span>${labels.prev}</span><strong style="color:${s.prevPending>0?'var(--rust)':'inherit'};">${currency(s.prevPending)}</strong></div>
-    <div class="billing-stat-line${cls}"><span>${escapeHtml(thisLabel)}</span><strong style="color:${s.thisPending>0?'var(--rust)':'inherit'};">${currency(s.thisPending)}</strong></div>
-    <div class="billing-stat-line${cls}"><span>${labels.total}</span><strong>${currency(s.totalBilled)}</strong></div>
-    <div class="billing-stat-line${cls}"><span>${labels.recv}</span><strong style="color:var(--green-deep);">${currency(s.received)}</strong></div>
-    <div class="billing-stat-line${cls}"${lastStyle}><span>${labels.pend}</span><strong style="color:${s.totalPending>0?'var(--rust)':'var(--success)'};">${currency(s.totalPending)}</strong></div>`;
+    <div class="billing-dues-outstanding-row">
+      <div>
+        <div class="billing-dues-label">Total outstanding</div>
+        <div class="billing-dues-outstanding">${currency(s.totalPending)}</div>
+      </div>
+      <div class="billing-dues-breakdown">
+        <div class="billing-stat-line"><span>Carried from before</span><strong style="color:${s.prevPending>0?'var(--rust)':'inherit'};">${currency(s.prevPending)}</strong></div>
+        <div class="billing-stat-line"><span>Pending from this period</span><strong style="color:${s.thisPending>0?'var(--rust)':'inherit'};">${currency(s.thisPending)}</strong></div>
+      </div>
+    </div>
+    <div class="billing-dues-collection">
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:4px;">
+        <span>Billed this period: ${currency(s.totalBilled)}</span><span>${collectPct}% collected</span>
+      </div>
+      <div class="billing-dues-bar-wrap"><div class="billing-dues-bar" style="width:${collectPct}%;"></div></div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">${currency(s.received)} received this period</div>
+    </div>
+  `;
 }
 
 function billingDuesYearCardsHtml(allBills, allPayments){
@@ -767,9 +1048,9 @@ function billingDuesYearCardsHtml(allBills, allPayments){
   return `
   <div class="billing-card-grid billing-year-grid billing-dues-year-grid">
     ${years.map(y => `
-    <button type="button" class="card billing-pick-card billing-year-card" data-dues-drill-year="${y}">
+    <button type="button" class="card billing-pick-card billing-year-card billing-dues-card" data-dues-drill-year="${y}">
       <div class="billing-year-num">${y}</div>
-      ${billingDuesStatLinesHtml(billingDuesYearStats(allBills, allPayments, y), { thisLabel:'This year pending' })}
+      ${billingDuesSummaryCardHtml(billingDuesYearStats(allBills, allPayments, y))}
     </button>`).join('')}
   </div>`;
 }
@@ -780,12 +1061,12 @@ function billingDuesMonthCardsHtml(allBills, allPayments, year){
     const m = i+1;
     const selected = Number(nav.month) === m;
     return `
-    <button type="button" class="card billing-pick-card billing-month-card ${selected?'selected':''}" data-dues-drill-month="${m}">
-      <div class="billing-month-name">${name}</div>
-      ${billingDuesStatLinesHtml(billingDuesMonthStats(allBills, allPayments, year, m), { small:true, thisLabel:'This mo.' })}
+    <button type="button" class="card billing-pick-card billing-month-card billing-dues-card calendar-tile ${selected?'selected':''}" data-dues-drill-month="${m}">
+      <div class="billing-month-name">${calendarIcon()} ${name}</div>
+      ${billingDuesSummaryCardHtml(billingDuesMonthStats(allBills, allPayments, year, m), { size:'small' })}
     </button>`;
   }).join('');
-  return `<div class="billing-card-grid billing-month-grid billing-dues-month-grid">${cards}</div>`;
+  return `<div class="billing-card-grid billing-month-grid billing-dues-month-grid calendar-grid">${cards}</div>`;
 }
 
 function billingDuesDateGroupsHtml(allBills, allPayments, year, month){
@@ -811,7 +1092,7 @@ function billingDuesDateGroupsHtml(allBills, allPayments, year, month){
     return `
     <div class="collapsible-section billing-group-section">
       <div class="collapsible-header" onclick="toggleCollapse(this)">
-        <h3>${dateFmt(dateKey)} <span class="billing-group-count">(${count} ${count===1?'entry':'entries'})</span></h3>
+        <h3>${calendarIcon()} ${dateFmt(dateKey)} <span class="billing-group-count">(${count} ${count===1?'entry':'entries'})</span></h3>
         <div class="billing-group-header-right">
           <span class="billing-group-totals">
             ${dBills.length ? `<span>Billed <strong class="mono">${currency(billedAmt)}</strong></span>` : ''}
@@ -858,13 +1139,53 @@ function billingDuesOverviewHtml(allBills){
   const stats = billingDuesMonthStats(allBills, allPayments, year, month);
   const detail = `
   <div class="billing-month-detail">
-    <div class="billing-month-summary">${billingDuesStatLinesHtml(stats, { thisLabel:'This month pending', highlightLast:false })}</div>
+    <div class="card card-pad billing-dues-detail-summary">${billingDuesSummaryCardHtml(stats)}</div>
     ${billingDuesDateGroupsHtml(allBills, allPayments, year, month)}
   </div>`;
   return crumb + monthCards + detail;
 }
 
+/* ---- Reuse: full tenant statement (modal) + year ledger PDF ---- */
+async function openTenantFullStatementModal(userId, userName){
+  openModal(`Full statement — ${userName}`, `<div style="text-align:center; padding:24px 0;"><div class="spinner dark" style="margin:0 auto;"></div></div>`, `<button class="btn btn-ghost" id="cancelBtn">Close</button>`);
+  document.getElementById('modalEl')?.classList.add('modal-wide');
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  try {
+    const user = state.cache.users.find(u=>u.id===userId);
+    const data = await api(`/api/user/${userId}/financial-summary`);
+    const body = document.getElementById('modalBody');
+    body.innerHTML = renderAdminTenantDashboard(data, user, null);
+    attachAdminTenantBillFilters(body);
+    body.querySelectorAll('.collapsible-header').forEach(h => h.addEventListener('click', function(){ this.classList.toggle('open'); const b=this.nextElementSibling; if (b) b.classList.toggle('open'); }));
+    body.querySelectorAll('.month-row-head').forEach(h => h.addEventListener('click', function(){ const b=this.nextElementSibling; if (b) b.classList.toggle('open'); }));
+  } catch(err){
+    document.getElementById('modalBody').innerHTML = errorBannerHtml(err.message);
+  }
+}
+
+async function downloadTenantYearLedgerPdf(userId, userName, userMobile, year){
+  try {
+    const data = await api(`/api/ledger/monthly?user_id=${userId}&year=${year}`);
+    const complexName = [...new Set((data.shops||[]).map(s=>s.complex_name).filter(Boolean))].join(', ');
+    const doc = buildMonthlyLedgerDoc(userName, userMobile, year, data.monthly, data.summary, complexName);
+    doc.save(`ledger-${userName.replace(/\s+/g,'_')}-${year}.pdf`);
+  } catch(err){
+    showToast(err.message || 'Could not build ledger PDF', 'error');
+  }
+}
+
 function attachBillingResultHandlers(){
+  const bvSearch = document.getElementById('bvSearch');
+  if (bvSearch){
+    bvSearch.addEventListener('input', () => {
+      const q = bvSearch.value.trim().toLowerCase();
+      document.querySelectorAll('#billingResults tr[data-search], #billingResults .billing-pick-card[data-search]').forEach(el => {
+        const hay = (el.dataset.search||'').toLowerCase();
+        el.style.display = hay.includes(q) ? '' : 'none';
+      });
+    });
+  }
+
   document.querySelectorAll('[data-billing-mode]').forEach(el => el.addEventListener('click', () => {
     const mode = el.dataset.billingMode;
     if (mode === (state.billing.nav.mode || 'tenant')) return;
@@ -940,6 +1261,12 @@ function attachBillingResultHandlers(){
   document.querySelectorAll('[data-add-bill-for]').forEach(el => el.addEventListener('click', () => openBillModal(Number(el.dataset.addBillFor))));
   document.querySelectorAll('[data-record-payment-for]').forEach(el => el.addEventListener('click', () => {
     renderPaymentForm({ preselectedComplexId: state.billing.nav.complexId==='null'?null:Number(state.billing.nav.complexId), preselectedUserId: Number(el.dataset.recordPaymentFor) });
+  }));
+  document.querySelectorAll('[data-full-statement]').forEach(el => el.addEventListener('click', () => {
+    openTenantFullStatementModal(Number(el.dataset.fullStatement), el.dataset.fullStatementName || 'Tenant');
+  }));
+  document.querySelectorAll('[data-download-ledger]').forEach(el => el.addEventListener('click', () => {
+    downloadTenantYearLedgerPdf(Number(el.dataset.ledgerUser), el.dataset.ledgerName||'Tenant', el.dataset.ledgerMobile||'', Number(el.dataset.downloadLedger));
   }));
 
   document.querySelectorAll('[data-record-payment]').forEach(btn => btn.addEventListener('click', () => openRecordPaymentModal(Number(btn.dataset.recordPayment))));

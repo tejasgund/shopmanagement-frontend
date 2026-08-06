@@ -25,11 +25,9 @@ const viewMeta = {
   complexes: { title:'Complexes', crumb:'Buildings and properties you manage', action:'Add complex' },
   shops:     { title:'Shops', crumb:'Units across all complexes', action:'Add shop' },
   users:     { title:'Users', crumb:'Admins and tenants', action:'Add user' },
-  billing:   { title:'Bills & Payments', crumb:'Charges and payments, browsed tenant-wise, property-wise, or by dues overview', action:null },
-  finance:   { title:'Tenant View', crumb:'Full tenant dashboard – bills, payments, deposit status', action:null },
+  billing:   { title:'Finance', crumb:'Add, manage, and browse every bill and payment — tenant-wise, property-wise, or by dues overview', action:null },
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
   reports:   { title:'Reports', crumb:'Occupancy, collections and outstanding dues', action:null },
-  ledger: { title:'Month-wise Ledger', crumb:'Monthly breakdown of bills, payments, and deposits', action:null },
   audit: { title:'Audit Log', crumb:'Every create, update, and delete action across the system', action:null },
 };
 
@@ -73,10 +71,8 @@ async function renderView(view){
       case 'shops': content.innerHTML = await shopsView(); attachShopHandlers(); break;
       case 'users': content.innerHTML = await usersView(); attachUserHandlers(); break;
       case 'billing': content.innerHTML = await billingView(); attachBillingHandlers(); break;
-      case 'finance': content.innerHTML = await financeView(); attachFinanceHandlers(); break;
       case 'deposits': content.innerHTML = await depositsView(); attachDepositHandlers(); break;
       case 'reports': content.innerHTML = await reportsView(); attachReportsHandlers(); break;
-      case 'ledger': content.innerHTML = await ledgerView(); attachLedgerHandlers(); break;
       case 'audit': content.innerHTML = await auditView(); attachAuditHandlers(); break;
     }
     attachSearchFilter();
