@@ -42,7 +42,7 @@ async function api(path, { method = 'GET', body = null, auth = true } = {}) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
-    throw new ApiError("Can't reach the server. Please check your internet and try again.", 0);
+    throw new ApiError(t('common.noInternet'), 0);
   }
 
   let data = null;
@@ -95,11 +95,20 @@ const currency = (n) => '₹' + Number(n ?? 0).toLocaleString('en-IN', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
 
+/* Dates are written out by hand rather than with toLocaleDateString, because
+   Marathi month names aren't reliably available across the phone browsers
+   our tenants use. Digits stay Latin - everyone reads those. */
 const dateFmt = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d)) return String(iso);
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return `${String(d.getDate()).padStart(2, '0')} ${monthShort(d.getMonth())} ${d.getFullYear()}`;
+};
+
+const monthYearFmt = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return `${monthName(d.getMonth())} ${d.getFullYear()}`;
 };
 
 function startOfToday(){
@@ -117,9 +126,23 @@ function daysBetween(a, b){
 
 function greetingWord(){
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return t('hello.morning');
+  if (h < 17) return t('hello.afternoon');
+  return t('hello.evening');
+}
+
+/* Percentage paid, clamped - used by every progress bar in the portal. */
+function paidPercent(paid, total){
+  const p = Number(paid || 0), tt = Number(total || 0);
+  if (tt <= 0) return p > 0 ? 100 : 0;
+  return Math.max(0, Math.min(100, Math.round((p / tt) * 100)));
+}
+
+/* One progress bar, used for bill-type totals and month totals. */
+function progressBarHtml(paid, total, tone){
+  const pct = paidPercent(paid, total);
+  const cls = tone || (pct >= 100 ? 'done' : pct > 0 ? 'part' : 'none');
+  return `<div class="tp-progress"><div class="tp-progress-fill is-${cls}" style="width:${pct}%;"></div></div>`;
 }
 
 function tpLoadingHtml(){

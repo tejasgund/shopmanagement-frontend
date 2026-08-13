@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="mr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -32,37 +32,42 @@
       <div class="stamp-mark">Hi</div>
       <div class="wordmark">Sahyadri Buisness Park<span>.</span></div>
     </div>
-    <h1>Welcome back</h1>
-    <p class="login-sub">Sign in to view your shops, bills and payments.</p>
+    <div class="login-lang" id="loginLang">
+      <button type="button" class="login-lang-btn" data-login-lang="mr">मराठी</button>
+      <button type="button" class="login-lang-btn" data-login-lang="en">English</button>
+    </div>
+
+    <h1 data-i18n="title">पुन्हा स्वागत आहे</h1>
+    <p class="login-sub" data-i18n="sub">तुमची दुकाने, बिले आणि भरलेले पैसे पाहण्यासाठी लॉगिन करा.</p>
 
     <div class="login-error" id="loginError"></div>
 
     <form id="loginForm" autocomplete="on">
       <div class="field">
-        <label for="loginMobile">Mobile number</label>
+        <label for="loginMobile" data-i18n="mobile">मोबाईल नंबर</label>
         <div class="input-icon-row">
           <svg class="input-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-          <input type="tel" id="loginMobile" name="mobile" placeholder="10-digit mobile number" autocomplete="tel" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric">
+          <input type="tel" id="loginMobile" name="mobile" placeholder="१० अंकी मोबाईल नंबर" data-i18n-ph="mobilePh" autocomplete="tel" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric">
         </div>
       </div>
       <div class="field">
-        <label for="loginPassword">Password</label>
+        <label for="loginPassword" data-i18n="password">पासवर्ड</label>
         <div class="input-icon-row pw-row">
           <svg class="input-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <input type="password" id="loginPassword" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+          <input type="password" id="loginPassword" name="password" placeholder="तुमचा पासवर्ड लिहा" data-i18n-ph="passwordPh" autocomplete="current-password" required>
           <button type="button" class="pw-toggle" id="pwToggle">SHOW</button>
         </div>
       </div>
       <button type="submit" class="btn btn-primary btn-block btn-lg" id="loginBtn">
-        <span id="loginBtnText">Sign in</span>
+        <span id="loginBtnText" data-i18n="signIn">लॉगिन करा</span>
       </button>
     </form>
 
     <div class="login-help">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
       <div>
-        <div class="login-help-title">Trouble signing in?</div>
-        <div class="login-help-sub">Call <strong>Tejas Gund</strong> — <a href="tel:+918177809890">+91 81778 09890</a></div>
+        <div class="login-help-title" data-i18n="help">लॉगिन होत नाही का?</div>
+        <div class="login-help-sub"><span data-i18n="call">फोन करा</span> <strong>Tejas Gund</strong> — <a href="tel:+918177809890">+91 81778 09890</a></div>
       </div>
     </div>
   </div>
@@ -143,10 +148,10 @@ loginForm.addEventListener('submit', async (e) => {
     localStorage.setItem('tms_role', data.role);
     window.location.replace(data.role === 'admin' ? './ADMIN/index.html' : './USER/index.html');
   } catch (err) {
-    loginError.textContent = err.message || 'Sign in failed. Check your credentials.';
+    loginError.textContent = err.message || lt('failed');
     loginError.classList.add('show');
     loginBtn.disabled = false;
-    loginBtnText.textContent = 'Sign in';
+    loginBtnText.textContent = lt('signIn');
   }
 });
 </script>

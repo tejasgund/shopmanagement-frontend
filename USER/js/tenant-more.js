@@ -11,53 +11,67 @@ function openMoreSheet(){
   const depositDue  = tp.shops.reduce((s, sh) => s + Number(sh.shop_deposit || 0), 0);
   const p = tp.profile || {};
 
-  openModal('More', `
+  openModal(t('more.title'), `
     <div class="tp-sheet">
 
-      <div class="tp-sheet-sub">How to pay</div>
-      <div class="tp-pay-line">${escapeHtml(paymentMethodsText())}</div>
-      <div class="tp-sheet-hint">
-        Payments are recorded by the office. Once recorded, they appear under the
-        “I paid” tab, usually the same day.
+      <div class="tp-sheet-sub">${t('more.language')}</div>
+      <div class="tp-lang-switch">
+        <button type="button" class="tp-lang ${getLang()==='mr'?'active':''}" data-set-lang="mr">मराठी</button>
+        <button type="button" class="tp-lang ${getLang()==='en'?'active':''}" data-set-lang="en">English</button>
       </div>
 
+      <div class="tp-sheet-sub">${t('home.howToPay')}</div>
+      <div class="tp-pay-line">${escapeHtml(paymentMethodsText())}</div>
+      <div class="tp-sheet-hint">${t('more.payNote')}</div>
+
       ${depositDue > 0 ? `
-      <div class="tp-sheet-sub">Security deposit</div>
-      <div class="tp-kv"><span>Deposit for your shop</span><strong>${currency(depositDue)}</strong></div>
-      <div class="tp-kv"><span>You have paid</span><strong>${currency(depositPaid)}</strong></div>
+      <div class="tp-sheet-sub">${t('more.deposit')}</div>
+      ${progressBarHtml(depositPaid, depositDue)}
+      <div class="tp-kv"><span>${t('more.depositNeeded')}</span><strong>${currency(depositDue)}</strong></div>
+      <div class="tp-kv"><span>${t('more.depositPaid')}</span><strong>${currency(depositPaid)}</strong></div>
       ${depositPaid < depositDue
-        ? `<div class="tp-kv"><span>Still to pay</span><strong class="tp-red">${currency(depositDue - depositPaid)}</strong></div>`
-        : `<div class="tp-kv"><span>Status</span><strong class="tp-green">Fully paid ✓</strong></div>`}
+        ? `<div class="tp-kv"><span>${t('more.depositLeft')}</span><strong class="tp-red">${currency(depositDue - depositPaid)}</strong></div>`
+        : `<div class="tp-kv"><span>${t('more.status')}</span><strong class="tp-green">${t('more.depositDone')}</strong></div>`}
       ` : ''}
 
-      <div class="tp-sheet-sub">My details</div>
-      <div class="tp-kv"><span>Name</span><strong>${escapeHtml(p.name || '—')}</strong></div>
-      <div class="tp-kv"><span>Mobile</span><strong>${escapeHtml(p.mobile || '—')}</strong></div>
-      ${p.email ? `<div class="tp-kv"><span>Email</span><strong>${escapeHtml(p.email)}</strong></div>` : ''}
+      <div class="tp-sheet-sub">${t('more.myDetails')}</div>
+      <div class="tp-kv"><span>${t('more.name')}</span><strong>${escapeHtml(p.name || '—')}</strong></div>
+      <div class="tp-kv"><span>${t('more.mobile')}</span><strong>${escapeHtml(p.mobile || '—')}</strong></div>
+      ${p.email ? `<div class="tp-kv"><span>${t('more.email')}</span><strong>${escapeHtml(p.email)}</strong></div>` : ''}
       ${tp.shops.map(s => `
         <div class="tp-kv">
           <span>${escapeHtml(s.shop_number || 'Shop')}</span>
-          <strong>${currency(s.shop_rent)} / month</strong>
+          <strong>${currency(s.shop_rent)} / ${t('shop.perMonth')}</strong>
         </div>
         ${s.agreement_end_date
-          ? `<div class="tp-kv"><span class="tp-kv-sub">Agreement ends</span><strong>${dateFmt(s.agreement_end_date)}</strong></div>`
+          ? `<div class="tp-kv"><span class="tp-kv-sub">${t('more.agreementEnds')}</span><strong>${dateFmt(s.agreement_end_date)}</strong></div>`
           : ''}`).join('')}
-      <div class="tp-sheet-hint">
-        Something wrong here? The office can correct it — these details are read-only.
-      </div>
+      <div class="tp-sheet-hint">${t('more.readOnly')}</div>
 
-      <div class="tp-sheet-sub">Statement</div>
+      <div class="tp-sheet-sub">${t('more.statement')}</div>
       <button class="tp-btn tp-btn-ghost tp-btn-block" id="tpStatementBtn">
-        Download my statement (PDF)
+        ${t('more.download')}
       </button>
 
       <button class="tp-btn tp-btn-danger tp-btn-block" id="tpSignOutBtn" style="margin-top:22px;">
-        Sign out
+        ${t('more.signOut')}
       </button>
     </div>
-  `, `<button class="tp-btn tp-btn-primary tp-btn-block" id="tpMoreClose">Close</button>`);
+  `, `<button class="tp-btn tp-btn-primary tp-btn-block" id="tpMoreClose">${t('common.close')}</button>`);
 
   document.getElementById('tpMoreClose').addEventListener('click', closeModal);
+
+  // Switching language re-renders the whole portal, then reopens this sheet
+  // so the tenant sees the change straight away.
+  document.querySelectorAll('[data-set-lang]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      if (btn.dataset.setLang === getLang()) return;
+      setLang(btn.dataset.setLang);
+      closeModal();
+      applyStaticLabels();
+      switchTab(tp.tab);
+      openMoreSheet();
+    }));
   document.getElementById('tpSignOutBtn').addEventListener('click', logout);
   document.getElementById('tpStatementBtn').addEventListener('click', downloadTenantStatement);
 }
@@ -80,6 +94,14 @@ function paymentMethodsText(){
    ================================================================ */
 function downloadTenantStatement(){
   if (!window.jspdf){ showToast('Statement is not available on this device', 'error'); return; }
+
+  // Dates inside the PDF must be Latin-only too (see billTypeLabelEn).
+  const pdfDate = (iso) => {
+    const d = new Date(iso);
+    if (isNaN(d)) return '-';
+    const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${String(d.getDate()).padStart(2,'0')} ${M[d.getMonth()]} ${d.getFullYear()}`;
+  };
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -123,7 +145,7 @@ function downloadTenantStatement(){
     body: [...tp.bills]
       .sort((a, b) => new Date(b.bill_date) - new Date(a.bill_date))
       .map(b => [
-        dateFmt(b.bill_date), billTypeLabel(b.bill_type),
+        pdfDate(b.bill_date), billTypeLabelEn(b.bill_type),
         money(b.amount), money(b.paid_amount), money(b.pending_amount),
       ]),
     margin: { left: marginX, right: marginX },
@@ -140,7 +162,7 @@ function downloadTenantStatement(){
       startY: y,
       head: [['Date', 'Method', 'Amount', 'Put towards']],
       body: groups.map(g => [
-        dateFmt(g.date), g.method || '—', money(g.total),
+        pdfDate(g.date), g.method || '-', money(g.total),
         g.parts.length > 1 ? `${g.parts.length} bills` : '1 bill',
       ]),
       margin: { left: marginX, right: marginX },

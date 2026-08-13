@@ -63,8 +63,8 @@ function renderPaymentsScreen(){
   if (!groups.length){
     return `
     <div class="tp-empty">
-      <div class="tp-empty-title">No payments yet</div>
-      <div class="tp-empty-sub">Once the office records a payment from you, it will show up here.</div>
+      <div class="tp-empty-title">${t('pay.none')}</div>
+      <div class="tp-empty-sub">${t('pay.noneSub')}</div>
     </div>`;
   }
 
@@ -76,13 +76,11 @@ function renderPaymentsScreen(){
 
   return `
   <div class="tp-strip tp-strip-ok">
-    <span>You paid in ${thisYear}</span>
+    <span>${t('pay.youPaidIn')} ${thisYear}</span>
     <strong>${currency(yearTotal)}</strong>
   </div>
 
-  <div class="tp-hint-line">
-    Each entry below is one payment you made. Tap it to see which bills it went towards.
-  </div>
+  <div class="tp-hint-line">${t('pay.hint')}</div>
 
   ${groupsByMonthHtml(groups)}
   `;
@@ -94,7 +92,7 @@ function groupsByMonthHtml(groups){
   groups.forEach(g => {
     const d = new Date(g.date);
     const key = isNaN(d) ? 'other' : `${d.getFullYear()}-${d.getMonth()}`;
-    const label = isNaN(d) ? 'Other' : d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const label = isNaN(d) ? '—' : monthYearFmt(d);
     if (!byKey[key]){ byKey[key] = { label, total: 0, groups: [] }; months.push(byKey[key]); }
     byKey[key].groups.push(g);
     byKey[key].total += g.total;
@@ -116,7 +114,7 @@ function paymentGroupCardHtml(g){
   <button type="button" class="tp-payment" data-payment-key="${escapeHtml(g.key)}">
     <div class="tp-payment-top">
       <div>
-        <div class="tp-payment-label">You paid</div>
+        <div class="tp-payment-label">${t('pay.youPaid')}</div>
         <div class="tp-payment-value">${currency(g.total)}</div>
       </div>
       <span class="tp-tick-big">✓</span>
@@ -126,7 +124,7 @@ function paymentGroupCardHtml(g){
     </div>
     ${splitAcross ? `
       <div class="tp-payment-split">
-        Put towards ${g.parts.length} bills — tap to see
+        ${g.parts.length} ${t('pay.splitAcross')}
       </div>` : ''}
   </button>`;
 }
@@ -138,17 +136,16 @@ function openPaymentSheet(key){
 
   const billFor = (id) => tp.bills.find(b => b.id === id);
 
-  openModal('Your payment', `
+  openModal(t('pay.title'), `
     <div class="tp-sheet">
       <div class="tp-sheet-hero is-paid">
-        <div class="tp-sheet-hero-label">You paid</div>
+        <div class="tp-sheet-hero-label">${t('pay.youPaid')}</div>
         <div class="tp-sheet-hero-value">${currency(g.total)}</div>
         <div class="tp-sheet-hero-sub">${dateFmt(g.date)}${g.method ? ' · ' + escapeHtml(g.method) : ''}</div>
       </div>
 
       <div class="tp-sheet-sub">${g.parts.length > 1
-        ? 'This one payment was put towards these bills'
-        : 'This payment was put towards'}</div>
+        ? t('pay.putTowardsMany') : t('pay.putTowards')}</div>
 
       ${g.parts.map(p => {
         const b = billFor(p.bill_id);
@@ -161,18 +158,15 @@ function openPaymentSheet(key){
         </div>`;
       }).join('')}
 
-      <div class="tp-kv tp-kv-total"><span>Total</span><strong>${currency(g.total)}</strong></div>
+      <div class="tp-kv tp-kv-total"><span>${t('pay.total')}</span><strong>${currency(g.total)}</strong></div>
 
       ${g.parts.some(p => p.remarks) ? `
         <div class="tp-sheet-note">${escapeHtml(g.parts.find(p => p.remarks).remarks)}</div>` : ''}
 
       ${g.parts.length > 1 ? `
-        <div class="tp-sheet-hint">
-          You paid this amount once. The office divided it between the bills above,
-          oldest first — that's why you may see smaller amounts against each bill.
-        </div>` : ''}
+        <div class="tp-sheet-hint">${t('pay.explainSplit')}</div>` : ''}
     </div>
-  `, `<button class="tp-btn tp-btn-primary tp-btn-block" id="tpPaySheetClose">Close</button>`);
+  `, `<button class="tp-btn tp-btn-primary tp-btn-block" id="tpPaySheetClose">${t('common.close')}</button>`);
 
   document.getElementById('tpPaySheetClose').addEventListener('click', closeModal);
 }

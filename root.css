@@ -606,3 +606,16 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .year-btn{ padding:7px 14px; border-radius:999px; border:1.5px solid var(--line); background:var(--paper-raised); font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; transition:all .12s; }
 .year-btn.active{ background:var(--ink); color:#fff; border-color:var(--ink); }
 .year-btn:hover:not(.active){ border-color:var(--ink); color:var(--ink); }
+
+/* ---- Sign-in language toggle (Marathi / English) ---- */
+.login-lang{
+  display:flex; gap:0; margin-bottom:20px;
+  border:1.5px solid var(--line); border-radius:var(--radius-sm); overflow:hidden;
+}
+.login-lang-btn{
+  flex:1; min-height:42px; border:none; background:var(--paper-raised);
+  font-size:14.5px; font-weight:700; color:var(--muted);
+  border-right:1.5px solid var(--line);
+}
+.login-lang-btn:last-child{ border-right:none; }
+.login-lang-btn.active{ background:var(--green); color:#fff; }

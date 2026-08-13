@@ -9,8 +9,8 @@ function renderMeterScreen(){
   if (!tp.meters.length){
     return `
     <div class="tp-empty">
-      <div class="tp-empty-title">No meter for your shop</div>
-      <div class="tp-empty-sub">If you have an electricity submeter, ask the office to add it.</div>
+      <div class="tp-empty-title">${t('meter.noMeterTitle')}</div>
+      <div class="tp-empty-sub">${t('meter.noMeterSub')}</div>
     </div>`;
   }
 
@@ -22,9 +22,9 @@ function renderMeterScreen(){
   return `
     ${stillRejected ? `
     <div class="tp-alert tp-alert-late">
-      <strong>Your last photo wasn't accepted.</strong>
+      <strong>${t('meter.rejectedTitle')}</strong>
       ${escapeHtml(rejected.rejection_reason || '')}<br>
-      Please take a clearer photo and send it again.
+      ${t('meter.rejectedAgain')}
     </div>` : ''}
 
     ${tp.meters.map(meterCardHtml).join('')}
@@ -37,24 +37,24 @@ function meterCardHtml(m){
   <div class="tp-meter-card">
     <div class="tp-meter-head">
       <div>
-        <div class="tp-meter-no">Meter ${escapeHtml(m.meter_number)}</div>
+        <div class="tp-meter-no">${t('meter.number')} ${escapeHtml(m.meter_number)}</div>
         <div class="tp-meter-shop">${escapeHtml(m.shop_number || '')}</div>
       </div>
     </div>
 
     <div class="tp-meter-prev">
-      <span>Last confirmed reading</span>
+      <span>${t('meter.lastConfirmed')}</span>
       <strong>${Number(m.previous_reading).toLocaleString('en-IN')}</strong>
     </div>
 
     ${m.has_pending ? `
       <div class="tp-meter-waiting">
-        <strong>Sent ✓</strong>
-        The office is checking your photo. Your bill will appear once it's confirmed.
+        <strong>${t('meter.sentTitle')}</strong>
+        ${t('meter.sentBody')}
       </div>
     ` : `
       <button class="tp-btn tp-btn-primary tp-btn-block tp-btn-lg" data-send-reading="${m.id}">
-        📷 Send this month's reading
+        ${t('meter.sendThisMonth')}
       </button>
     `}
   </div>`;
@@ -66,19 +66,19 @@ function meterHistoryHtml(){
 
   return `
   <div class="tp-block">
-    <div class="tp-block-head"><h2>What you've sent before</h2></div>
+    <div class="tp-block-head"><h2>${t('meter.history')}</h2></div>
     ${rows.map(r => {
-      const label = r.status === 'approved' ? 'Confirmed'
-                  : r.status === 'rejected' ? 'Not accepted' : 'Being checked';
+      const label = r.status === 'approved' ? t('meter.confirmed')
+                  : r.status === 'rejected' ? t('meter.rejected') : t('meter.checking');
       const cls = r.status === 'approved' ? 'paid' : r.status === 'rejected' ? 'unpaid' : 'part';
       return `
       <div class="tp-row">
         <div>
           <div class="tp-row-title">${dateFmt(r.reading_date)}</div>
           <div class="tp-row-sub">
-            You sent ${Number(r.customer_reading).toLocaleString('en-IN')}${
+            ${t('meter.youSent')} ${Number(r.customer_reading).toLocaleString('en-IN')}${
               r.status === 'approved' && r.calculated_units != null
-                ? ` · ${Number(r.calculated_units).toLocaleString('en-IN')} units used` : ''}
+                ? ` · ${Number(r.calculated_units).toLocaleString('en-IN')} ${t('meter.unitsUsed')}` : ''}
           </div>
           ${r.status === 'rejected' && r.rejection_reason
             ? `<div class="tp-row-warn">${escapeHtml(r.rejection_reason)}</div>` : ''}
@@ -104,14 +104,14 @@ function openSendReadingModal(meterId){
   openModal(`Meter ${meter.meter_number}`, `
     <div class="tp-sheet" id="tmForm">
       <div class="tp-sheet-note">
-        Your last confirmed reading was <strong>${prev.toLocaleString('en-IN')}</strong>.
-        Today's number should be higher than this.
+        ${t('form.lastWas')} <strong>${prev.toLocaleString('en-IN')}</strong>.
+        ${t('form.mustBeHigher')}
       </div>
 
       <div class="tp-field">
-        <label for="tmPhoto"><span class="tp-step">1</span> Take a photo of the meter</label>
+        <label for="tmPhoto"><span class="tp-step">1</span> ${t('form.step1')}</label>
         <input id="tmPhoto" type="file" accept="image/*" capture="environment" class="tp-file">
-        <div class="tp-field-hint">Get the numbers in focus — the office reads this photo.</div>
+        <div class="tp-field-hint">${t('form.step1Hint')}</div>
         <div id="tmPreviewWrap" class="tp-preview" style="display:none;">
           <img id="tmPreview" alt="The photo you selected">
         </div>
@@ -119,20 +119,20 @@ function openSendReadingModal(meterId){
       </div>
 
       <div class="tp-field">
-        <label for="tmReading"><span class="tp-step">2</span> Type the number on the meter</label>
+        <label for="tmReading"><span class="tp-step">2</span> ${t('form.step2')}</label>
         <input id="tmReading" type="number" inputmode="decimal" step="0.01" min="0"
                class="tp-big-input" placeholder="${(prev + 250).toLocaleString('en-IN')}">
         <div class="tp-field-error" id="tmReadingErr" style="display:none;"></div>
       </div>
 
       <div class="tp-field">
-        <label for="tmNote">Anything to tell the office? <span class="tp-optional">(optional)</span></label>
-        <input id="tmNote" class="tp-text-input" placeholder="e.g. the last digit is hard to see">
+        <label for="tmNote">${t('form.note')} <span class="tp-optional">${t('form.optional')}</span></label>
+        <input id="tmNote" class="tp-text-input" placeholder="${t('form.notePlaceholder')}">
       </div>
     </div>
   `, `
-    <button class="tp-btn tp-btn-ghost" id="tmCancelBtn">Cancel</button>
-    <button class="tp-btn tp-btn-primary" id="tmSubmitBtn">Send</button>
+    <button class="tp-btn tp-btn-ghost" id="tmCancelBtn">${t('common.cancel')}</button>
+    <button class="tp-btn tp-btn-primary" id="tmSubmitBtn">${t('common.send')}</button>
   `);
 
   document.getElementById('tmCancelBtn').addEventListener('click', closeModal);
@@ -151,11 +151,11 @@ function openSendReadingModal(meterId){
     const value = parseFloat(document.getElementById('tmReading').value);
     let ok = true;
 
-    if (!file){ showFieldError('tmPhotoErr', 'Please take a photo of the meter'); ok = false; }
-    if (isNaN(value)){ showFieldError('tmReadingErr', 'Please type the number on the meter'); ok = false; }
+    if (!file){ showFieldError('tmPhotoErr', t('form.needPhoto')); ok = false; }
+    if (isNaN(value)){ showFieldError('tmReadingErr', t('form.needNumber')); ok = false; }
     else if (value < prev){
       showFieldError('tmReadingErr',
-        `That's lower than your last confirmed reading (${prev.toLocaleString('en-IN')}). Please check again.`);
+        `${t('form.tooLow')} (${prev.toLocaleString('en-IN')})`);
       ok = false;
     }
     if (!ok) return;
@@ -170,7 +170,7 @@ function openSendReadingModal(meterId){
     const btn = document.getElementById('tmSubmitBtn');
     const original = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span class="tp-spinner"></span> Sending…';
+    btn.innerHTML = `<span class="tp-spinner"></span> ${t('form.sending')}`;
 
     try {
       // FormData must not go through api() — the browser has to set the
@@ -184,7 +184,7 @@ function openSendReadingModal(meterId){
       if (!res.ok) throw new Error(data?.detail || `Could not send (${res.status})`);
 
       closeModal();
-      showToast('Sent. The office will check your photo.', 'success');
+      showToast(t('form.sent'), 'success');
       await refreshTenantPortal(false);
     } catch (err) {
       btn.disabled = false;

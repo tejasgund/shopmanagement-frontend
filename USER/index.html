@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="mr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
@@ -36,7 +36,7 @@
     <div class="tp-header-left">
       <div class="tp-avatar" id="tenantInitial">·</div>
       <div class="tp-header-text">
-        <div class="tp-hello" id="tenantHello">Hello</div>
+        <div class="tp-hello" id="tenantHello">नमस्कार</div>
         <div class="tp-name" id="tenantName">…</div>
       </div>
     </div>
@@ -55,20 +55,20 @@
   <nav class="tp-tabs" id="tenantTabs" role="tablist">
     <button class="tp-tab active" data-tab="home" role="tab">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-7 9 7v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/></svg>
-      <span>Home</span>
+      <span>होम</span>
     </button>
     <button class="tp-tab" data-tab="bills" role="tab">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h14v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>
-      <span>My bills</span>
+      <span>माझी बिले</span>
       <span class="tp-tab-badge" id="billsBadge" style="display:none;">0</span>
     </button>
     <button class="tp-tab" data-tab="payments" role="tab">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 11h20"/></svg>
-      <span>I paid</span>
+      <span>भरलेले पैसे</span>
     </button>
     <button class="tp-tab" data-tab="meter" role="tab" id="meterTabBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-3"/></svg>
-      <span>Meter</span>
+      <span>मीटर</span>
       <span class="tp-tab-badge tp-tab-badge-green" id="meterBadge" style="display:none;">!</span>
     </button>
   </nav>
@@ -90,6 +90,7 @@
   </div>
 </div>
 
+<script src="js/i18n.js"></script>
 <script src="js/core.js"></script>
 <script src="js/ui-helpers.js"></script>
 <script src="js/tenant-home.js"></script>

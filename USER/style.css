@@ -518,3 +518,119 @@ input,textarea,select{ font-family:inherit; font-size:16px; }  /* 16px stops iOS
 .toast.fade-out{ animation:tp-toast-out .25s ease forwards; }
 @keyframes tp-toast-in{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:translateY(0); } }
 @keyframes tp-toast-out{ to{ opacity:0; transform:translateY(10px); } }
+
+/* ============================================================
+   PROGRESS BARS
+   Used for bill-type totals, month totals and the deposit.
+   ============================================================ */
+.tp-progress{
+  height:8px; border-radius:999px; background:var(--line);
+  overflow:hidden; margin:8px 0;
+}
+.tp-progress-fill{ height:100%; border-radius:999px; transition:width .45s ease; }
+.tp-progress-fill.is-done{ background:var(--success); }
+.tp-progress-fill.is-part{ background:var(--partial); }
+.tp-progress-fill.is-none{ background:var(--rust); width:0 !important; }
+
+/* ---- Pending by bill type (Home block 2) ---- */
+.tp-type-list{ padding:4px 16px 16px; }
+.tp-type-row{ padding:12px 0; border-top:1px solid var(--line); }
+.tp-type-row:first-child{ border-top:none; }
+.tp-type-top{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.tp-type-name{ font-size:15px; font-weight:600; }
+.tp-type-pending{ font-family:var(--font-mono); font-size:17px; font-weight:700; color:var(--rust); }
+.tp-type-foot{
+  display:flex; justify-content:space-between; gap:10px;
+  font-size:12px; color:var(--muted);
+}
+
+/* ---- Section title between blocks ---- */
+.tp-section-title{
+  font-size:11.5px; text-transform:uppercase; letter-spacing:.07em;
+  color:var(--muted); font-weight:700; margin:20px 2px 10px;
+}
+
+/* ============================================================
+   SHOP BLOCK (Home block 3) — one per shop, with its meter
+   ============================================================ */
+.tp-shop-block{
+  background:var(--paper-raised); border:1px solid var(--line);
+  border-radius:var(--radius); margin-bottom:14px; overflow:hidden;
+  box-shadow:var(--shadow-sm);
+}
+.tp-shop-head{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:15px 16px; background:var(--ink); color:#fff;
+}
+.tp-shop-number{ font-family:var(--font-display); font-size:20px; font-weight:700; }
+.tp-shop-rent{ text-align:right; }
+.tp-shop-rent span{ font-family:var(--font-mono); font-size:16px; font-weight:700; display:block; }
+.tp-shop-rent small{ font-size:11px; color:rgba(255,255,255,.7); }
+
+.tp-shop-facts{ padding:12px 16px 4px; }
+.tp-fact{
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+  padding:7px 0; font-size:14px;
+}
+.tp-fact-label{ color:var(--muted); flex-shrink:0; }
+.tp-fact-value{ font-weight:600; text-align:right; }
+.tp-fact-big{ font-size:20px; font-weight:700; }
+
+.tp-meter-strip{
+  margin:8px 12px 14px; padding:12px 14px;
+  background:var(--paper); border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+}
+.tp-add-reading{ margin-top:12px; }
+.tp-meter-pending{
+  margin-top:12px; padding:11px 13px; border-radius:var(--radius-sm);
+  background:var(--green-soft); color:var(--green-deep);
+  font-size:13.5px; font-weight:600; text-align:center;
+}
+.tp-shop-nometer{
+  padding:14px 16px; font-size:13.5px; color:var(--muted);
+  border-top:1px solid var(--line);
+}
+
+/* ============================================================
+   MONTH BLOCK (My bills)
+   ============================================================ */
+.tp-month-block{
+  background:var(--paper-raised); border:1px solid var(--line);
+  border-radius:var(--radius); padding:15px 16px 8px; margin-bottom:16px;
+  box-shadow:var(--shadow-sm);
+}
+.tp-month-block.is-settled{ opacity:.92; }
+.tp-month-block-head{
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+}
+.tp-month-name{ font-family:var(--font-display); font-size:18px; font-weight:700; }
+.tp-month-figure{ font-family:var(--font-mono); font-size:17px; font-weight:700; color:var(--rust); }
+.tp-month-figure.is-ok{ color:var(--success); font-size:14px; }
+.tp-month-legend{
+  display:flex; flex-wrap:wrap; gap:12px;
+  font-size:12px; color:var(--muted); margin-bottom:6px;
+}
+.tp-month-legend strong{ font-family:var(--font-mono); color:var(--ink); }
+.tp-month-bills{ margin-top:10px; }
+.tp-month-bills .tp-bill{ box-shadow:none; }
+
+/* ============================================================
+   LANGUAGE SWITCH
+   ============================================================ */
+.tp-lang-switch{
+  display:flex; gap:0; border:1.5px solid var(--line);
+  border-radius:var(--radius-sm); overflow:hidden; margin-bottom:8px;
+}
+.tp-lang{
+  flex:1; min-height:46px; border:none; background:var(--paper-raised);
+  font-size:15px; font-weight:700; color:var(--muted);
+  border-right:1.5px solid var(--line);
+}
+.tp-lang:last-child{ border-right:none; }
+.tp-lang.active{ background:var(--green); color:#fff; }
+.tp-shop-note{
+  padding:11px 16px; border-top:1px solid var(--line);
+  font-size:12.5px; color:var(--muted); background:var(--paper);
+}
+.tp-shop-note-warn{ color:#7A2E1C; background:var(--rust-soft); font-weight:600; }

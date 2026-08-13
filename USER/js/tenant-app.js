@@ -119,6 +119,22 @@ function switchTab(tab){
 /* Let a screen jump to another tab (e.g. "See my bills" on Home). */
 function tpGoTo(tab){ switchTab(tab); }
 
+/* Text that lives in index.html rather than in a render function - re-applied
+   whenever the language changes. */
+function applyStaticLabels(){
+  document.documentElement.lang = getLang();
+  const labels = { home: t('tab.home'), bills: t('tab.bills'),
+                   payments: t('tab.payments'), meter: t('tab.meter') };
+  document.querySelectorAll('.tp-tab').forEach(btn => {
+    const span = btn.querySelector('span:not(.tp-tab-badge)');
+    if (span) span.textContent = labels[btn.dataset.tab] || span.textContent;
+  });
+  document.getElementById('tenantRefreshBtn')?.setAttribute('title', t('action.refresh'));
+  document.getElementById('tenantMoreBtn')?.setAttribute('title', t('action.more'));
+  const hello = document.getElementById('tenantHello');
+  if (hello) hello.textContent = greetingWord();
+}
+
 function updateTabBadges(){
   const unpaid = tpUnpaidBills().length;
   const billsBadge = document.getElementById('billsBadge');
@@ -166,18 +182,18 @@ async function refreshTenantPortal(showToastOnDone){
   } catch (err) {
     main.innerHTML = `
       <div class="tp-error">
-        <div class="tp-error-title">Couldn't load your details</div>
+        <div class="tp-error-title">${t('common.loadFail')}</div>
         <div class="tp-error-msg">${escapeHtml(err.message)}</div>
-        <button class="tp-btn tp-btn-primary" id="tpRetryBtn">Try again</button>
+        <button class="tp-btn tp-btn-primary" id="tpRetryBtn">${t('common.tryAgain')}</button>
       </div>`;
     document.getElementById('tpRetryBtn').addEventListener('click', () => location.reload());
     return;
   }
 
-  const name = tp.profile?.name || 'there';
+  const name = tp.profile?.name || '';
   document.getElementById('tenantName').textContent = name;
-  document.getElementById('tenantHello').textContent = greetingWord();
   document.getElementById('tenantInitial').textContent = (name.trim()[0] || '?').toUpperCase();
+  applyStaticLabels();
 
   switchTab('home');
 
