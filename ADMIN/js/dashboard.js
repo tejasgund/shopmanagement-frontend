@@ -56,12 +56,12 @@ async function dashboardView(){
     <div class="card stat-card accent-green"><div class="label">Monthly rent</div><div class="value mono">${currency(totalMonthlyRent)}</div><div class="sub">from occupied shops</div></div>
     <div class="card stat-card accent-rust"><div class="label">Pending dues</div><div class="value mono">${currency(pendingTotal)}</div><div class="sub">${pendingBills.length} bills outstanding</div></div>
     <div class="card stat-card accent-green"><div class="label">Collected</div><div class="value mono">${currency(collectedTotal)}</div><div class="sub">across all bills</div></div>
-    <!-- NEW: Expiring agreements -->
-    <div class="card stat-card ${expiringSoon > 0 ? 'accent-rust' : 'accent-green'}">
+    <!-- Expiring agreements — clickable, drills into the shop/tenant list -->
+    <button type="button" id="expiringAgreementsCard" class="card stat-card glance-card ${expiringSoon > 0 ? 'accent-rust' : 'accent-green'}" style="text-align:left; cursor:pointer;">
       <div class="label">Agreements expiring in 30 days</div>
       <div class="value">${expiringSoon}</div>
       <div class="sub">${expiringSoon > 0 ? '⚠️ take action' : 'all clear'}</div>
-    </div>
+    </button>
   </div>
 
   <h3 style="font-size:15.5px; margin:0 0 14px;">Billing at a glance</h3>
@@ -129,11 +129,65 @@ async function dashboardView(){
 }
 
 function attachDashboardHandlers(){
-  document.querySelectorAll('.glance-card').forEach(card => {
+  document.querySelectorAll('.glance-card[data-glance]').forEach(card => {
     card.addEventListener('click', () => {
       pendingBillsViewFilter = card.dataset.glance;
       navigateTo('billing');
     });
+  });
+  document.getElementById('expiringAgreementsCard')?.addEventListener('click', openExpiringAgreementsModal);
+}
+
+/* ---- Expiring agreements drill-down (opened from the dashboard card) ---- */
+function openExpiringAgreementsModal(){
+  const shops = state.cache.shops || [];
+  const complexes = state.cache.complexes || [];
+  const complexName = (id) => complexes.find(c => c.id === id)?.name || '—';
+
+  const rows = shops
+    .filter(s => s.assigned_to && s.assigned_to.agreement_end_date)
+    .map(s => {
+      const days = Math.round((new Date(s.assigned_to.agreement_end_date) - new Date()) / 86400000);
+      return { shop: s, days };
+    })
+    .filter(r => r.days >= 0 && r.days <= 30)
+    .sort((a,b) => a.days - b.days);
+
+  const bodyHtml = rows.length === 0
+    ? emptyStateHtml('No agreements expiring soon', 'Nothing due for renewal in the next 30 days.', emptyIcon())
+    : `<div class="table-wrap" style="border:none; box-shadow:none;">
+        <table>
+          <thead><tr><th>Shop</th><th>Complex</th><th>Tenant</th><th>Mobile</th><th>Agreement ends</th><th>Days left</th><th></th></tr></thead>
+          <tbody>
+            ${rows.map(({shop:s}) => `<tr>
+              <td class="mono">${escapeHtml(s.shop_number)}</td>
+              <td>${escapeHtml(complexName(s.complex_id))}</td>
+              <td><a href="#" data-open-tenant="${s.assigned_to.id}" data-tenant-name="${escapeHtml(s.assigned_to.name)}" style="color:var(--green-deep); font-weight:600; text-decoration:none;">${escapeHtml(s.assigned_to.name)}</a></td>
+              <td>${escapeHtml(s.assigned_to.mobile || '—')}</td>
+              <td>${dateFmt(s.assigned_to.agreement_end_date)}</td>
+              <td>${daysLeftHtml(s.assigned_to.agreement_end_date)}</td>
+              <td><button class="btn-icon" data-edit-expiring="${s.id}" data-tenant-id="${s.assigned_to.id}" data-tenant-name="${escapeHtml(s.assigned_to.name)}" data-shop-number="${escapeHtml(s.shop_number)}" data-start="${s.assigned_to.agreement_start_date||''}" data-end="${s.assigned_to.agreement_end_date||''}" title="Edit agreement dates">✎</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+  openModal('Agreements expiring in 30 days', bodyHtml, `<button class="btn btn-ghost" id="cancelExpiringBtn">Close</button>`);
+  document.getElementById('modalEl')?.classList.add('modal-wide');
+  document.getElementById('cancelExpiringBtn').addEventListener('click', closeModal);
+
+  document.querySelectorAll('[data-open-tenant]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      openTenantFullStatementModal(Number(a.dataset.openTenant), a.dataset.tenantName);
+    });
+  });
+  document.querySelectorAll('[data-edit-expiring]').forEach(btn => {
+    btn.addEventListener('click', () => openEditAgreementModal(
+      Number(btn.dataset.tenantId), btn.dataset.tenantName, Number(btn.dataset.editExpiring),
+      btn.dataset.shopNumber, btn.dataset.start || null, btn.dataset.end || null,
+      () => openExpiringAgreementsModal()
+    ));
   });
 }
 
