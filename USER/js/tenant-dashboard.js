@@ -121,6 +121,10 @@ async function loadTenantPortal(){
       <div id="tpAnswerBody"></div>
     </div>
 
+    <!-- Electricity meter: send this month's reading (filled in by tenant-meters.js;
+         stays empty if this tenant has no submeter) -->
+    <div id="tenantMeterSection"></div>
+
     <!-- Full-year summary table + PDF -->
     <div class="collapsible-section">
       <div class="collapsible-header open" onclick="toggleCollapse(this)">
@@ -263,6 +267,10 @@ async function loadTenantPortal(){
         body.classList.toggle('open');
       });
     });
+
+    // ── Electricity meter section (renders itself, or stays hidden if this
+    //    tenant has no submeter). Not awaited so it can't delay the page. ──
+    loadTenantMeterSection();
 
   } catch (err) {
     content.innerHTML = errorBannerHtml(err.message);

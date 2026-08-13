@@ -511,19 +511,26 @@ function renderBusinessOverviewHtml(rep, start, end){
   </div>
 
   <div class="card">
-    <div class="card-pad" style="padding-bottom:0;"><h3 style="font-size:15.5px;">Top defaulters</h3><p style="font-size:12.5px; color:var(--muted); margin:4px 0 0;">Highest pending amounts, current unpaid bills.</p></div>
+    <div class="card-pad" style="padding-bottom:0; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+      <div><h3 style="font-size:15.5px;">Top defaulters</h3><p style="font-size:12.5px; color:var(--muted); margin:4px 0 0;">Highest pending amounts, current unpaid bills — top 10.</p></div>
+      ${rep.top_defaulters.length > 0 ? `<button type="button" id="remindSelectedBtn" class="btn btn-ghost btn-sm" disabled>Remind selected (0)</button>` : ''}
+    </div>
     ${rep.top_defaulters.length === 0 ? emptyStateHtml('No defaulters', 'Every bill is fully paid — great job.', emptyIcon()) : `
     <div class="table-wrap" style="border:none; border-radius:0; box-shadow:none; margin-top:10px;">
       <table>
-        <thead><tr><th>Tenant</th><th>Mobile</th><th class="num">Total pending</th><th>Oldest due</th><th></th></tr></thead>
+        <thead><tr><th style="width:30px;">${rep.top_defaulters.some(d=>waLink(d.mobile,d.user_name,d.total_pending)) ? '<input type="checkbox" id="defaulterSelectAll">' : ''}</th><th>Tenant</th><th>Mobile</th><th class="num">Total pending</th><th>Oldest due</th><th></th></tr></thead>
         <tbody>
-          ${rep.top_defaulters.map(d=>`<tr>
+          ${rep.top_defaulters.map(d=>{
+            const link = waLink(d.mobile, d.user_name, d.total_pending);
+            return `<tr>
+            <td>${link ? `<input type="checkbox" class="defaulter-check" data-name="${escapeHtml(d.user_name||'')}" data-mobile="${escapeHtml(d.mobile||'')}" data-amount="${d.total_pending}">` : ''}</td>
             <td>${d.user_id ? `<a href="#" data-defaulter-user="${d.user_id}" data-defaulter-name="${escapeHtml(d.user_name||'')}" style="color:var(--green-deep); font-weight:700; text-decoration:none;">${escapeHtml(d.user_name||'—')}</a>` : `<strong>${escapeHtml(d.user_name||'—')}</strong>`}</td>
             <td class="mono">${escapeHtml(d.mobile||'—')}</td>
             <td class="num"><span style="color:var(--rust);font-weight:700;">${currency(d.total_pending)}</span></td>
             <td>${dateFmt(d.oldest_due_date)}</td>
-            <td>${waLink(d.mobile, d.user_name, d.total_pending) ? `<a href="${waLink(d.mobile, d.user_name, d.total_pending)}" target="_blank" rel="noopener" style="font-size:12px; color:var(--success,#3a7d5c); font-weight:600; text-decoration:none; white-space:nowrap;">Remind ↗</a>` : ''}</td>
-          </tr>`).join('')}
+            <td>${link ? `<a href="${link}" target="_blank" rel="noopener" style="font-size:12px; color:var(--success,#3a7d5c); font-weight:600; text-decoration:none; white-space:nowrap;">Remind ↗</a>` : ''}</td>
+          </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>`}
@@ -549,6 +556,79 @@ function attachBusinessOverviewHandlers(rep){
       openTenantFullStatementModal(Number(a.dataset.defaulterUser), a.dataset.defaulterName);
     });
   });
+
+  const checkboxes = () => document.querySelectorAll('.defaulter-check');
+  const updateRemindBtn = () => {
+    const btn = document.getElementById('remindSelectedBtn');
+    if (!btn) return;
+    const n = document.querySelectorAll('.defaulter-check:checked').length;
+    btn.textContent = `Remind selected (${n})`;
+    btn.disabled = n === 0;
+  };
+  document.getElementById('defaulterSelectAll')?.addEventListener('change', (e) => {
+    checkboxes().forEach(cb => { cb.checked = e.target.checked; });
+    updateRemindBtn();
+  });
+  checkboxes().forEach(cb => cb.addEventListener('change', updateRemindBtn));
+  document.getElementById('remindSelectedBtn')?.addEventListener('click', () => {
+    const selected = [...document.querySelectorAll('.defaulter-check:checked')].map(cb => ({
+      name: cb.dataset.name, mobile: cb.dataset.mobile, amount: Number(cb.dataset.amount),
+    }));
+    if (selected.length) openReminderQueueModal(selected);
+  });
+}
+
+/* ---- Bulk reminder queue: steps through selected defaulters one at a time,
+   opening a pre-filled WhatsApp chat for each (WhatsApp itself still requires
+   a manual Send click — this just removes the hunting between tenants). ---- */
+function openReminderQueueModal(entries){
+  let idx = 0;
+  let openedCount = 0;
+
+  const waLinkFor = (e) => {
+    const digits = (e.mobile || '').replace(/\D/g,'');
+    const msg = encodeURIComponent(`Hi ${e.name}, this is a reminder that ${currency(e.amount)} is pending on your account. Please clear it at your earliest convenience. Thank you.`);
+    return `https://wa.me/${digits.length===10?'91'+digits:digits}?text=${msg}`;
+  };
+
+  const renderStep = () => {
+    const e = entries[idx];
+    document.getElementById('modalBody').innerHTML = `
+      <div style="text-align:center; padding:10px 0 4px;">
+        <div style="font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:14px;">Reminder ${idx+1} of ${entries.length} · ${openedCount} sent so far</div>
+        <div style="font-size:18px; font-weight:700; margin-bottom:4px;">${escapeHtml(e.name)}</div>
+        <div class="mono" style="color:var(--muted); margin-bottom:10px;">${escapeHtml(e.mobile)}</div>
+        <div class="mono" style="font-size:20px; font-weight:700; color:var(--rust); margin-bottom:18px;">${currency(e.amount)} pending</div>
+        <button type="button" class="btn btn-primary btn-lg btn-block" id="openWaBtn">Open WhatsApp &amp; next →</button>
+        <button type="button" class="btn btn-ghost btn-sm btn-block" id="skipBtn" style="margin-top:8px;">Skip this tenant</button>
+      </div>
+    `;
+    document.getElementById('openWaBtn').addEventListener('click', () => {
+      window.open(waLinkFor(e), '_blank', 'noopener');
+      openedCount++;
+      advance();
+    });
+    document.getElementById('skipBtn').addEventListener('click', advance);
+  };
+
+  const advance = () => {
+    idx++;
+    if (idx >= entries.length){
+      document.getElementById('modalBody').innerHTML = `
+        <div style="text-align:center; padding:24px 0;">
+          <div style="font-size:17px; font-weight:700; margin-bottom:6px;">All done</div>
+          <div style="color:var(--muted); font-size:13.5px;">Opened WhatsApp for ${openedCount} of ${entries.length} tenant(s).</div>
+        </div>`;
+      document.getElementById('modalFoot').innerHTML = `<button class="btn btn-primary" id="closeQueueBtn">Close</button>`;
+      document.getElementById('closeQueueBtn').addEventListener('click', closeModal);
+      return;
+    }
+    renderStep();
+  };
+
+  openModal(`Send reminders`, '', `<button class="btn btn-ghost" id="cancelQueueBtn">Close</button>`);
+  document.getElementById('cancelQueueBtn').addEventListener('click', closeModal);
+  renderStep();
 }
 
 /* ---- Occupancy tab: Total/Occupied/Available cards filter the shop-details table below ---- */

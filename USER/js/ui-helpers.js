@@ -174,3 +174,43 @@ async function shareMonthlyLedgerPdf(source){
     showToast('Sharing not supported on this device/browser — file downloaded instead', 'success');
   }
 }
+
+/* ================================================================
+   MINIMAL MODAL ENGINE
+   The tenant portal only needs one modal (sending a meter reading),
+   so this is a trimmed version of the admin's — same markup and
+   classes, so it inherits the identical styling from root.css.
+   ================================================================ */
+function openModal(title, bodyHtml, footHtml){
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  document.getElementById('modalFoot').innerHTML = footHtml;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function closeModal(){
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+
+function fieldErrorHtml(id){ return `<div class="field-error" id="${id}" style="display:none;"></div>`; }
+
+function showFieldError(id, msg){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function clearFieldErrors(scope){
+  if (!scope) return;
+  scope.querySelectorAll('.field-error').forEach(e => { e.style.display = 'none'; e.textContent = ''; });
+  scope.querySelectorAll('.invalid').forEach(e => e.classList.remove('invalid'));
+}
+
+document.getElementById('modalCloseBtn')?.addEventListener('click', closeModal);
+document.getElementById('modalOverlay')?.addEventListener('click', (e) => {
+  if (e.target.id === 'modalOverlay') closeModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('modalOverlay')?.classList.contains('show')) closeModal();
+});

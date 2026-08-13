@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime output
+logs/
+uploads/          # meter photos - evidence files, backed up separately, never in git
+
+# Local env
+.env
+*.db

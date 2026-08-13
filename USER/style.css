@@ -591,3 +591,63 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
 .year-btn{ padding:7px 14px; border-radius:999px; border:1.5px solid var(--line); background:var(--paper-raised); font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; transition:all .12s; }
 .year-btn.active{ background:var(--ink); color:#fff; border-color:var(--ink); }
 .year-btn:hover:not(.active){ border-color:var(--ink); color:var(--ink); }
+
+/* ============================================================
+   METER READING — tenant view
+   Big touch targets: this is used on a phone, standing at the meter.
+   ============================================================ */
+.tm-alert{
+  background:var(--rust-soft); border:1.5px solid #E8C4A8; color:#7A3A18;
+  border-radius:var(--radius-sm); padding:12px 14px; font-size:13.5px; margin-bottom:14px;
+}
+.tm-card{
+  border:1.5px solid var(--line); border-radius:var(--radius);
+  padding:15px 16px; margin-bottom:12px; background:var(--paper-raised);
+}
+.tm-card-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px; }
+.tm-meter-no{ font-weight:700; font-size:15px; }
+.tm-shop{ font-size:12px; color:var(--muted); margin-top:2px; }
+.tm-prev{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  background:var(--paper); border-radius:var(--radius-sm); padding:11px 13px; margin-bottom:13px;
+}
+.tm-prev span{ font-size:13px; color:var(--muted); }
+.tm-prev strong{ font-size:18px; }
+.tm-send-btn{ font-size:15.5px !important; padding:15px !important; }
+.tm-waiting{
+  background:var(--success-soft); color:var(--success);
+  border-radius:var(--radius-sm); padding:12px 14px; font-size:13px; font-weight:500;
+}
+
+.tm-history-title{
+  font-size:11.5px; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted); font-weight:700; margin:18px 0 8px;
+}
+.tm-history-row{
+  display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+  padding:11px 0; border-bottom:1px solid var(--line);
+}
+.tm-history-row:last-child{ border-bottom:none; }
+.tm-history-date{ font-weight:600; font-size:13.5px; }
+.tm-history-meta{ font-size:12px; color:var(--muted); margin-top:2px; }
+.tm-history-reason{ font-size:12px; color:var(--danger); margin-top:3px; }
+.tm-history-right{ text-align:right; flex-shrink:0; }
+.tm-history-amt{ font-size:14px; font-weight:700; margin-top:4px; }
+
+/* ---- Send-reading form ---- */
+.tm-form-prev{
+  background:var(--paper); border-radius:var(--radius-sm);
+  padding:12px 14px; margin-bottom:18px; font-size:13.5px; line-height:1.55;
+}
+.tm-file{
+  width:100%; padding:13px; border:1.5px dashed var(--line); border-radius:var(--radius-sm);
+  background:var(--paper-raised); font-size:14px;
+}
+.tm-preview{ margin-top:10px; border-radius:var(--radius-sm); overflow:hidden; background:#111; }
+.tm-preview img{ width:100%; max-height:260px; object-fit:contain; display:block; }
+.tm-big-input{
+  width:100%; padding:16px !important; font-size:26px !important; font-weight:700;
+  text-align:center; border:2px solid var(--green) !important; border-radius:var(--radius-sm);
+  background:var(--paper-raised);
+}
+.tm-big-input:focus{ outline:none; box-shadow:0 0 0 3px rgba(47,111,79,.14); }

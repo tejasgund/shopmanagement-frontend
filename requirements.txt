@@ -1,0 +1,33 @@
+# Tenant Management System – Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# Database
+sqlalchemy==2.0.35
+pymysql==1.1.1          # MySQL driver (pure Python, no C extension needed)
+cryptography==43.0.1    # Required by PyMySQL for SSL connections
+
+# Auth & Security
+python-jose[cryptography]==3.3.0   # JWT encode/decode
+bcrypt==4.2.0                      # Password hashing
+passlib[bcrypt]==1.7.4             # Optional wrapper used alongside bcrypt
+
+# Validation
+pydantic[email]==2.9.2
+email-validator==2.2.0
+
+# Multipart form parsing (meter photo uploads)
+python-multipart==0.0.12
+
+# Environment variables (optional – load .env file)
+python-dotenv==1.0.1
+
+# Scheduling (in-process cron for automatic rent bill generation)
+APScheduler==3.10.4
+
+# Testing
+pytest==8.3.3
+httpx==0.27.2           # required by fastapi.testclient

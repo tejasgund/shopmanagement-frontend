@@ -116,8 +116,10 @@ const viewMeta = {
   users:     { title:'Users', crumb:'Admins and tenants', action:'Add user' },
   billing:   { title:'Finance', crumb:'Add, manage, and browse every bill and payment — tenant-wise, property-wise, or by dues overview', action:null },
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
+  meters:    { title:'Meter Readings', crumb:'Check the photo, enter what you read, approve — the bill is raised for you', action:null },
   reports:   { title:'Reports', crumb:'Occupancy, collections and outstanding dues', action:null },
   audit: { title:'Audit Log', crumb:'Every create, update, and delete action across the system', action:null },
+  settings:  { title:'Settings', crumb:'Rename the app, change wording, photo limits and billing behaviour', action:null },
 };
 
 document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
@@ -169,8 +171,10 @@ async function renderView(view){
       case 'users': content.innerHTML = await usersView(); attachUserHandlers(); break;
       case 'billing': content.innerHTML = await billingView(); attachBillingHandlers(); break;
       case 'deposits': content.innerHTML = await depositsView(); attachDepositHandlers(); break;
+      case 'meters': content.innerHTML = await metersView(); attachMeterHandlers(); break;
       case 'reports': content.innerHTML = await reportsView(); attachReportsHandlers(); break;
       case 'audit': content.innerHTML = await auditView(); attachAuditHandlers(); break;
+      case 'settings': content.innerHTML = await settingsView(); attachSettingsHandlers(); break;
     }
     attachSearchFilter();
   } catch (err) {
