@@ -31,8 +31,7 @@ function homeAmountCardHtml(due, unpaid, overdue, next){
       <div class="tp-amount-icon">✓</div>
       <div class="tp-amount-label">${t('home.allPaid')}</div>
       <div class="tp-amount-sub">${t('home.allPaidSub')}</div>
-    </div>
-    ${howToPayHtml()}`;
+    </div>`;
   }
 
   const overdueTotal = overdue.reduce((s, b) => s + Number(b.pending_amount || 0), 0);
@@ -66,19 +65,8 @@ function homeAmountCardHtml(due, unpaid, overdue, next){
       <div class="tp-amount-label">${t('home.youOwe')}</div>
       <div class="tp-amount-value">${currency(due)}</div>
       ${whenLine}
-      <div class="tp-amount-meta">${unpaid.length} ${t('home.billsLeft')}</div>
       <button class="tp-btn tp-btn-light tp-btn-block" data-go-tab="bills">${t('home.seeWhat')}</button>
-    </div>
-
-    ${howToPayHtml()}`;
-}
-
-function howToPayHtml(){
-  return `
-  <div class="tp-payline">
-    <span class="tp-payline-label">${t('home.howToPay')}</span>
-    <span class="tp-payline-text">${escapeHtml(paymentMethodsText())}</span>
-  </div>`;
+    </div>`;
 }
 
 /* ================================================================
@@ -115,15 +103,8 @@ function homePendingByTypeHtml(){
     <div class="tp-type-list">
       ${rows.map(r => `
         <div class="tp-type-row">
-          <div class="tp-type-top">
-            <span class="tp-type-name">${escapeHtml(billTypeLabel(r.type))}</span>
-            <span class="tp-type-pending">${currency(r.pending)}</span>
-          </div>
-          ${progressBarHtml(r.paid, r.billed)}
-          <div class="tp-type-foot">
-            <span>${currency(r.paid)} ${t('home.paidLabel')} ${t('home.pendingOf')} ${currency(r.billed)}</span>
-            <span>${paidPercent(r.paid, r.billed)}%</span>
-          </div>
+          <span class="tp-type-name">${escapeHtml(billTypeLabel(r.type))}</span>
+          <span class="tp-type-pending">${currency(r.pending)}</span>
         </div>`).join('')}
     </div>
   </div>`;
@@ -142,6 +123,20 @@ function homeShopBlocksHtml(){
 
 function shopBlockHtml(shop){
   const meters = tp.meters.filter(m => m.shop_id === shop.id);
+
+  // Deposit is recorded per shop, so only count the payments for this one.
+  // Older records may not carry shop_id; if none match, fall back to the
+  // tenant's whole deposit total when they have a single shop.
+  const perShop = tp.deposits.filter(d => d.shop_id === shop.id);
+  const depositPaid = (perShop.length || tp.shops.length > 1)
+    ? perShop.reduce((s, d) => s + Number(d.amount || 0), 0)
+    : tp.deposits.reduce((s, d) => s + Number(d.amount || 0), 0);
+  const depositDue = Number(shop.shop_deposit || 0);
+  const depositLeft = Math.max(0, depositDue - depositPaid);
+
+  const start = shop.agreement_start_date;
+  const end   = shop.agreement_end_date;
+  const daysLeft = end ? daysBetween(startOfToday(), new Date(end)) : null;
 
   return `
   <div class="tp-shop-block">
@@ -164,24 +159,52 @@ function shopBlockHtml(shop){
       </div>
     </div>
 
+    <!-- Agreement -->
+    <div class="tp-shop-sub">${t('shop.agreement')}</div>
+    <div class="tp-shop-facts">
+      <div class="tp-fact">
+        <span class="tp-fact-label">${t('shop.agreementStart')}</span>
+        <span class="tp-fact-value">${start ? dateFmt(start) : '—'}</span>
+      </div>
+      <div class="tp-fact">
+        <span class="tp-fact-label">${t('shop.agreementEnd')}</span>
+        <span class="tp-fact-value">${end ? dateFmt(end) : '—'}</span>
+      </div>
+      ${daysLeft !== null ? `
+      <div class="tp-fact">
+        <span class="tp-fact-label">${t('shop.daysRemaining')}</span>
+        <span class="tp-fact-value ${daysLeft < 0 ? 'tp-red' : daysLeft <= 30 ? 'tp-warn' : ''}">
+          ${daysLeft < 0
+            ? t('shop.agreementOver')
+            : `${daysLeft} ${getLang() === 'mr' ? 'दिवस' : 'day' + (daysLeft !== 1 ? 's' : '')}`}
+        </span>
+      </div>` : ''}
+    </div>
+
+    <!-- Deposit -->
+    ${depositDue > 0 || depositPaid > 0 ? `
+    <div class="tp-shop-sub">${t('shop.deposit')}</div>
+    <div class="tp-shop-facts">
+      <div class="tp-fact">
+        <span class="tp-fact-label">${t('shop.depositNeeded')}</span>
+        <span class="tp-fact-value">${currency(depositDue)}</span>
+      </div>
+      <div class="tp-fact">
+        <span class="tp-fact-label">${t('shop.depositPaid')}</span>
+        <span class="tp-fact-value">${currency(depositPaid)}</span>
+      </div>
+      <div class="tp-fact">
+        <span class="tp-fact-label">${t('shop.depositLeft')}</span>
+        <span class="tp-fact-value ${depositLeft > 0 ? 'tp-red' : 'tp-green'}">
+          ${depositLeft > 0 ? currency(depositLeft) : t('shop.depositDone')}
+        </span>
+      </div>
+    </div>` : ''}
+
     ${meters.length
       ? meters.map(m => shopMeterHtml(m)).join('')
       : `<div class="tp-shop-nometer">${t('meter.noMeter')}</div>`}
-
-    ${agreementNoteHtml(shop.agreement_end_date)}
   </div>`;
-}
-
-/* Only mentioned when it's actually close, so it doesn't become wallpaper. */
-function agreementNoteHtml(endIso){
-  if (!endIso) return '';
-  const days = daysBetween(startOfToday(), new Date(endIso));
-  if (days > 30) return '';
-  if (days < 0){
-    return `<div class="tp-shop-note tp-shop-note-warn">${t('common.agreementEnded')}</div>`;
-  }
-  return `<div class="tp-shop-note">${t('common.agreementEnding')} ${dateFmt(endIso)}
-          — ${days} ${getLang() === 'mr' ? 'दिवस' : 'day' + (days !== 1 ? 's' : '')}</div>`;
 }
 
 function shopMeterHtml(m){

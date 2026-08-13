@@ -75,6 +75,64 @@
 
 <script>
 /* ================================================================
+   LANGUAGE — Marathi by default.
+
+   The same localStorage key the tenant portal uses, so a tenant who
+   picks a language here doesn't have to pick again inside the app.
+   ================================================================ */
+const LOGIN_STRINGS = {
+  title:      { mr: 'पुन्हा स्वागत आहे',  en: 'Welcome back' },
+  sub:        { mr: 'तुमची दुकाने, बिले आणि भरलेले पैसे पाहण्यासाठी लॉगिन करा.',
+                en: 'Sign in to view your shops, bills and payments.' },
+  mobile:     { mr: 'मोबाईल नंबर',        en: 'Mobile number' },
+  mobilePh:   { mr: '१० अंकी मोबाईल नंबर', en: '10-digit mobile number' },
+  password:   { mr: 'पासवर्ड',            en: 'Password' },
+  passwordPh: { mr: 'तुमचा पासवर्ड लिहा',  en: 'Enter your password' },
+  signIn:     { mr: 'लॉगिन करा',          en: 'Sign in' },
+  help:       { mr: 'लॉगिन होत नाही का?',  en: 'Trouble signing in?' },
+  call:       { mr: 'फोन करा',            en: 'Call' },
+  failed:     { mr: 'लॉगिन झाले नाही. मोबाईल नंबर आणि पासवर्ड तपासा.',
+                en: 'Sign in failed. Check your credentials.' },
+  show:       { mr: 'दाखवा',              en: 'SHOW' },
+  hide:       { mr: 'लपवा',               en: 'HIDE' },
+};
+
+function loginLang(){ return localStorage.getItem('tms_lang') || 'mr'; }
+
+function lt(key){
+  const e = LOGIN_STRINGS[key];
+  return e ? (e[loginLang()] || e.en) : key;
+}
+
+function applyLoginLang(){
+  const lang = loginLang();
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = lt(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+    el.placeholder = lt(el.getAttribute('data-i18n-ph'));
+  });
+  document.querySelectorAll('[data-login-lang]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-login-lang') === lang);
+  });
+  // The show/hide password toggle keeps whichever state it's currently in.
+  const pwToggle = document.getElementById('pwToggle');
+  const pwInput = document.getElementById('loginPassword');
+  if (pwToggle && pwInput) pwToggle.textContent = pwInput.type === 'password' ? lt('show') : lt('hide');
+}
+
+/* This script tag sits at the end of <body>, so the DOM above it already
+   exists — apply immediately rather than waiting for DOMContentLoaded. */
+applyLoginLang();
+document.querySelectorAll('[data-login-lang]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    localStorage.setItem('tms_lang', btn.getAttribute('data-login-lang'));
+    applyLoginLang();
+  });
+});
+
+/* ================================================================
    CONFIG — set your backend URL here
    ================================================================ */
 const API_BASE_URL = ""; // relative — same origin as this page; Apache proxies /api to the backend
@@ -129,8 +187,8 @@ const loginBtnText = document.getElementById('loginBtnText');
 document.getElementById('pwToggle').addEventListener('click', () => {
   const pw = document.getElementById('loginPassword');
   const btn = document.getElementById('pwToggle');
-  if (pw.type === 'password'){ pw.type = 'text'; btn.textContent = 'HIDE'; }
-  else { pw.type = 'password'; btn.textContent = 'SHOW'; }
+  if (pw.type === 'password'){ pw.type = 'text'; btn.textContent = lt('hide'); }
+  else { pw.type = 'password'; btn.textContent = lt('show'); }
 });
 
 loginForm.addEventListener('submit', async (e) => {

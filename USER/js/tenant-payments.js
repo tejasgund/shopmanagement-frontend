@@ -19,10 +19,15 @@
          Electricity          ₹1,500
          Maintenance          ₹500
 
-   Grouping rule: rows that share `payment_group` (if the backend
-   sends it) are one payment. Without that field we fall back to
-   grouping by date + method, which covers the auto-allocate case
-   because every row it creates carries the same date and method.
+   Grouping rule, best available first:
+     1. `payment_group` — an explicit id the backend puts on every row
+        created by one collection. Exact.
+     2. `created_at` to the minute + method — rows written by one
+        auto-allocate share a transaction, so they land in the same
+        minute. Two separate cash payments taken hours apart stay
+        separate, which date-only grouping got wrong.
+     3. payment_date + method — last resort for old rows that predate
+        created_at being returned.
    ================================================================ */
 
 function groupedPayments(){
@@ -30,11 +35,18 @@ function groupedPayments(){
   const groups = [];
   const byKey = {};
 
+  const keyFor = (p) => {
+    if (p.payment_group || p.receipt_no) return p.payment_group || p.receipt_no;
+    const method = (p.payment_method || '').toLowerCase();
+    if (p.created_at){
+      // Trim to the minute: one allocation writes all its rows together.
+      return `c:${String(p.created_at).slice(0, 16)}|${method}`;
+    }
+    return `d:${String(p.payment_date || '').slice(0, 10)}|${method}`;
+  };
+
   rows.forEach(p => {
-    // Prefer an explicit group id from the backend; otherwise same day +
-    // same method is treated as one handover.
-    const key = p.payment_group || p.receipt_no ||
-      `${String(p.payment_date || '').slice(0, 10)}|${(p.payment_method || '').toLowerCase()}`;
+    const key = keyFor(p);
 
     if (!byKey[key]){
       byKey[key] = {

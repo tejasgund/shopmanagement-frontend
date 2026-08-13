@@ -79,7 +79,8 @@ Object.assign(sandbox.tp, {
   loaded: true,
   profile: { id: 2, name: 'Ramesh Patel', mobile: '9822012345', email: null },
   shops: [{ id: 1, shop_number: 'A-101', complex_id: 1, complex_name: 'Sahyadri Business Park',
-            shop_rent: 10000, shop_deposit: 50000, agreement_end_date: daysAhead(40) }],
+            shop_rent: 10000, shop_deposit: 50000,
+            agreement_start_date: daysAgo(325), agreement_end_date: daysAhead(40) }],
   bills: [
     { id: 11, shop_id: 1, bill_type: 'Rent', amount: 10000, paid_amount: 4000,
       pending_amount: 6000, bill_date: daysAgo(40), due_date: daysAgo(9), status: 'partial' },
@@ -95,11 +96,17 @@ Object.assign(sandbox.tp, {
   // THE SCENARIO: one ₹6,000 handover auto-allocated across 3 bills (3 rows,
   // same date + method), plus a separate ₹8,500 cash handover across 2 bills.
   payments: [
-    { id: 31, bill_id: 9,  amount: 4000, payment_method: 'UPI',  payment_date: daysAgo(30) },
-    { id: 32, bill_id: 8,  amount: 500,  payment_method: 'UPI',  payment_date: daysAgo(30) },
-    { id: 33, bill_id: 11, amount: 1500, payment_method: 'UPI',  payment_date: daysAgo(30) },
-    { id: 34, bill_id: 9,  amount: 6000, payment_method: 'Cash', payment_date: daysAgo(12), remarks: 'At office' },
-    { id: 35, bill_id: 11, amount: 2500, payment_method: 'Cash', payment_date: daysAgo(12) },
+    // One 6,000 handover, auto-allocated across 3 bills in a single
+    // transaction -> identical created_at.
+    { id: 31, bill_id: 9,  amount: 4000, payment_method: 'UPI',  payment_date: daysAgo(30), created_at: '2026-07-15T10:22:04' },
+    { id: 32, bill_id: 8,  amount: 500,  payment_method: 'UPI',  payment_date: daysAgo(30), created_at: '2026-07-15T10:22:04' },
+    { id: 33, bill_id: 11, amount: 1500, payment_method: 'UPI',  payment_date: daysAgo(30), created_at: '2026-07-15T10:22:04' },
+    // One 8,500 cash handover, also a single allocation.
+    { id: 34, bill_id: 9,  amount: 6000, payment_method: 'Cash', payment_date: daysAgo(12), created_at: '2026-08-02T09:10:11', remarks: 'At office' },
+    { id: 35, bill_id: 11, amount: 2500, payment_method: 'Cash', payment_date: daysAgo(12), created_at: '2026-08-02T09:10:11' },
+    // SAME DAY, SAME METHOD, but recorded hours later - a genuinely separate
+    // payment that date-only grouping used to merge into the one above.
+    { id: 36, bill_id: 11, amount: 1200, payment_method: 'Cash', payment_date: daysAgo(12), created_at: '2026-08-02T17:45:30' },
   ],
   meters: [{ id: 7, meter_number: 'MTR-001', shop_id: 1, shop_number: 'A-101',
              previous_reading: 12730, has_pending: false }],
@@ -110,7 +117,7 @@ Object.assign(sandbox.tp, {
     { id: 50, meter_id: 7, status: 'rejected', customer_reading: 12900, calculated_units: null,
       reading_date: daysAgo(8), rejection_reason: 'Photo too blurry to read', has_photo: true },
   ],
-  deposits: [{ id: 1, amount: 30000, payment_date: daysAgo(300) }],
+  deposits: [{ id: 1, shop_id: 1, amount: 30000, payment_date: daysAgo(300) }],
   publicSettings: null,
 });
 
@@ -134,6 +141,8 @@ check('Marathi month names used', /ऑग|जुलै|जून|मे|एप�
 check('Marathi bill type "दुकान भाडे"', strip(sandbox.renderBillsScreen()).includes('दुकान भाडे'));
 check('Marathi meter block "मागील रीडिंग"', mrHome.includes('मागील रीडिंग'));
 check('Marathi big button "नवीन रीडिंग द्या"', mrHome.includes('नवीन रीडिंग द्या'));
+check('Marathi agreement labels', mrHome.includes('करार सुरू झाला') && mrHome.includes('उरलेले दिवस'));
+check('Marathi deposit labels', mrHome.includes('एकूण अनामत') && mrHome.includes('बाकी अनामत'));
 
 sandbox.setLang('en');
 check('can switch to English', sandbox.getLang() === 'en');
@@ -143,8 +152,8 @@ const home = strip(sandbox.renderHomeScreen());
 check('shows the total owed (₹8,660.00)', home.includes('8,660.00'));
 check('says something is overdue', /overdue/i.test(home));
 check('shows how many days late', /Late by \d+ day/.test(home));
-check('shows how to pay (methods only)', /How to pay/i.test(home) && /Cash, UPI/.test(home));
-check('leaks no UPI id / account number', !/@ok|IFSC|A\/c\b/i.test(home));
+check('Home no longer shows a "how to pay" block', !/How to pay/i.test(home));
+check('Home no longer says "bills not fully paid"', !/not fully paid/i.test(home));
 check('offers the reading action on Home', /Add meter reading/.test(home));
 check('shows the shop and rent', home.includes('A-101') && home.includes('10,000.00'));
 check('agreement warning appears in the More sheet', true);  // checked in MORE below
@@ -156,10 +165,8 @@ check('has a "what you still owe" block', /What you still owe/.test(home));
 check('breaks the total down by type', /Shop rent/.test(home) && /Electricity/.test(home));
 check('shows rent pending 6,000 and electricity 2,660',
       home.includes('6,000.00') && home.includes('2,660.00'));
-check('draws a progress bar per type',
-      (homeHtml.match(/tp-progress-fill/g) || []).length >= 2,
-      `${(homeHtml.match(/tp-progress-fill/g) || []).length} bars`);
-check('rent bar is 40% (4,000 of 10,000)', /width:40%/.test(homeHtml));
+check('no progress bars in the owed-by-type block',
+      !/tp-progress/.test(homeHtml.split('tp-section-title')[0] || homeHtml));
 
 console.log('\n--- Home block 3: one block per shop ---');
 check('shop block present', /tp-shop-block/.test(homeHtml));
@@ -169,6 +176,13 @@ check('shows rent', home.includes('10,000.00'));
 check('shows previous reading', home.includes('12,730'));
 check('shows previous reading date', /Previous reading date/.test(home));
 check('big add-reading button', /Add meter reading/.test(home) && /tp-add-reading/.test(homeHtml));
+check('shows agreement start date', /Started on/.test(home));
+check('shows agreement end date', /Ends on/.test(home));
+check('shows days remaining', /Days remaining/.test(home) && /40 days/.test(home));
+check('shows deposit needed / paid / left',
+      /Deposit needed/.test(home) && /Deposit paid/.test(home) && /Deposit left/.test(home));
+check('deposit maths right (50,000 - 30,000 = 20,000)',
+      home.includes('50,000.00') && home.includes('30,000.00') && home.includes('20,000.00'));
 
 console.log('\n=== MY BILLS ===');
 const billsHtml = sandbox.renderBillsScreen();
@@ -187,7 +201,12 @@ check('month block shows billed / paid / left', /Billed/.test(bills) && /Left/.t
 
 console.log('\n=== I PAID  (the complaint) ===');
 const groups = sandbox.groupedPayments();
-check('5 API rows became 2 payments', groups.length === 2, `${groups.length} groups from 5 rows`);
+check('6 API rows became 3 payments', groups.length === 3, `${groups.length} groups from 6 rows`);
+check('same-day payments taken hours apart stay separate',
+      groups.filter(g => g.method === 'Cash').length === 2,
+      `${groups.filter(g => g.method === 'Cash').length} cash entries`);
+check('the later same-day 1,200 is its own entry',
+      groups.some(g => Math.round(g.total) === 1200));
 const six = groups.find(g => Math.round(g.total) === 6000);
 const eighty5 = groups.find(g => Math.round(g.total) === 8500);
 check('the ₹6,000 handover is one entry', !!six, six ? `${six.parts.length} bills, ${six.method}` : '');

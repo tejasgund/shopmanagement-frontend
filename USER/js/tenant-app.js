@@ -28,6 +28,29 @@ const tp = {
 async function loadTenantData(){
   const soft = (p, fallback) => p.catch(() => fallback);
 
+  // Fast path: one request for everything. On a shop's phone connection the
+  // round trips cost more than the queries do. If the backend doesn't have
+  // this endpoint yet we fall back to the individual calls below.
+  try {
+    const home = await api('/api/tenant/home');
+    if (home && home.profile){
+      tp.profile  = home.profile;
+      tp.shops    = home.shops    || [];
+      tp.bills    = home.bills    || [];
+      tp.payments = home.payments || [];
+      tp.meters   = home.meters   || [];
+      tp.readings = home.readings || [];
+      tp.deposits = home.deposits || [];
+      tp.publicSettings = home.settings || null;
+      tp.loaded = true;
+      if (home.settings?.app_name) document.title = home.settings.app_name;
+      return;
+    }
+  } catch (err) {
+    if (err.status === 401) throw err;      // expired session - let it bubble
+    /* anything else: fall through to the individual endpoints */
+  }
+
   const [profile, shops, bills, payments, meters, readings, deposits, settings] = await Promise.all([
     api('/api/tenant/profile'),
     soft(api('/api/tenant/shops'), []),

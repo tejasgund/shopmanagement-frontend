@@ -1488,6 +1488,7 @@ function openEditBillModal(billId){
   const bill = state.cache.bills.find(b => b.id === billId);
   if (!bill){ showToast('Bill not found', 'error'); return; }
   const dueVal = bill.due_date ? new Date(bill.due_date).toISOString().slice(0,10) : '';
+  const billDateVal = bill.bill_date ? new Date(bill.bill_date).toISOString().slice(0,10) : '';
 
   openModal('Edit bill', `
     <form id="billEditForm">
@@ -1505,6 +1506,11 @@ function openEditBillModal(billId){
           <label for="ebAmount">Amount (₹)</label>
           <input id="ebAmount" type="number" step="0.01" min="0.01" value="${Number(bill.amount).toFixed(2)}">
           ${fieldErrorHtml('ebAmountErr')}
+        </div>
+        <div class="field">
+          <label for="ebBillDate">Bill date</label>
+          <input id="ebBillDate" type="date" value="${billDateVal}">
+          <div class="hint">Which month this bill belongs to — changing it moves the bill in the tenant's monthly view and in reports.</div>
         </div>
         <div class="field">
           <label for="ebDue">Due date</label>
@@ -1537,6 +1543,7 @@ function openEditBillModal(billId){
     const description = document.getElementById('ebDesc').value.trim();
     const amount = parseFloat(document.getElementById('ebAmount').value);
     const due = document.getElementById('ebDue').value;
+    const billDate = document.getElementById('ebBillDate').value;
     const status = document.getElementById('ebStatus').value;
     let ok = true;
     if (!bill_type){ showFieldError('ebTypeErr','Bill type is required'); document.getElementById('ebType').classList.add('invalid'); ok=false; }
@@ -1546,6 +1553,7 @@ function openEditBillModal(billId){
     await withSavingState('saveBtn', async () => {
       await api(`/api/bill/${bill.id}`, { method:'PUT', body:{
         bill_type, description, amount,
+        bill_date: billDate ? new Date(billDate).toISOString() : undefined,
         due_date: due ? new Date(due).toISOString() : null,
         status,
       }});
