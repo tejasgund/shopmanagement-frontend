@@ -20,10 +20,12 @@ async function metersView(){
     ensureLoaded('shops','/api/shop'),
     ensureLoaded('users','/api/user'),
   ]);
+  // Meter master data (add/edit/assign) lives in its own Submeters module —
+  // this screen is only for reviewing what tenants have sent, plus the rate.
+  if (meterState.section === 'meters') meterState.section = 'review';
   return `
   <div class="billing-mode-switch">
     <button type="button" class="billing-mode-btn ${meterState.section==='review'?'active':''}" data-meter-section="review">Review readings</button>
-    <button type="button" class="billing-mode-btn ${meterState.section==='meters'?'active':''}" data-meter-section="meters">Meters</button>
     <button type="button" class="billing-mode-btn ${meterState.section==='tariffs'?'active':''}" data-meter-section="tariffs">Unit price</button>
   </div>
   <div id="meterBody">${skeletonHtml()}</div>`;

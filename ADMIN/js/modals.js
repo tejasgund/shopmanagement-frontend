@@ -131,12 +131,42 @@ async function renderShopForm(existing){
           ${complexes.length===0 ? '<div class="hint">Add a complex first before creating shops.</div>' : ''}
         </div>
       </div>
+
+      ${!isEdit ? `
+      <!-- Optional submeter, so a metered shop can be set up in one go instead
+           of a second trip through the Submeters screen. -->
+      <div class="shop-meter-block">
+        <label class="checkbox-row" style="padding:0;">
+          <input type="checkbox" id="sHasMeter"> <strong>This shop has an electricity submeter</strong>
+        </label>
+        <div id="sMeterFields" style="display:none; margin-top:12px;">
+          <div class="form-grid">
+            <div class="field">
+              <label for="sMeterNumber">Meter number</label>
+              <input id="sMeterNumber" placeholder="MTR-001">
+              ${fieldErrorHtml('sMeterNumberErr')}
+            </div>
+            <div class="field">
+              <label for="sMeterReading">Reading on the meter today</label>
+              <input id="sMeterReading" type="number" step="0.01" min="0" value="0">
+              <div class="hint">The first bill only charges units used above this.</div>
+            </div>
+          </div>
+        </div>
+      </div>` : ''}
     </form>
   `, `
     <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
     <button class="btn btn-primary" id="saveBtn" ${complexes.length===0?'disabled':''}>${isEdit ? 'Save changes' : 'Add shop'}</button>
   `);
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
+
+  // Reveal the meter fields only when the box is ticked.
+  document.getElementById('sHasMeter')?.addEventListener('change', (e) => {
+    document.getElementById('sMeterFields').style.display = e.target.checked ? 'block' : 'none';
+    if (e.target.checked) document.getElementById('sMeterNumber').focus();
+  });
+
   document.getElementById('saveBtn').addEventListener('click', async () => {
     const form = document.getElementById('shopForm');
     clearFieldErrors(form);
@@ -144,9 +174,13 @@ async function renderShopForm(existing){
     const area_sqft = parseFloat(document.getElementById('sArea').value);
     const status = document.getElementById('sStatus').value;
     const complex_id = Number(document.getElementById('sComplex').value);
+    const wantsMeter = document.getElementById('sHasMeter')?.checked;
+    const meterNumber = (document.getElementById('sMeterNumber')?.value || '').trim();
+
     let ok = true;
     if (!shop_number){ showFieldError('sNumberErr','Shop number is required'); document.getElementById('sNumber').classList.add('invalid'); ok=false; }
     if (isNaN(area_sqft) || area_sqft <= 0){ showFieldError('sAreaErr','Enter a valid area'); document.getElementById('sArea').classList.add('invalid'); ok=false; }
+    if (wantsMeter && !meterNumber){ showFieldError('sMeterNumberErr','Enter the meter number, or untick the box'); ok=false; }
     if (!ok) return;
 
     await withSavingState('saveBtn', async () => {
@@ -154,11 +188,40 @@ async function renderShopForm(existing){
         shop_rent: parseFloat(document.getElementById('sRent').value) || 0,
         shop_deposit: parseFloat(document.getElementById('sDeposit').value) || 0
       };
-      if (isEdit) await api(`/api/shop/${existing.id}`, { method:'PUT', body });
-      else await api('/api/shop', { method:'POST', body });
+
+      if (isEdit){
+        await api(`/api/shop/${existing.id}`, { method:'PUT', body });
+        state.loaded.shops = false;
+        closeModal();
+        showToast('Shop updated', 'success');
+        await renderView('shops');
+        return;
+      }
+
+      const shop = await api('/api/shop', { method:'POST', body });
       state.loaded.shops = false;
-      closeModal();
-      showToast(isEdit ? 'Shop updated' : 'Shop added', 'success');
+
+      if (wantsMeter){
+        // The shop already exists at this point, so if the meter fails we say
+        // so plainly rather than pretending the whole thing failed.
+        try {
+          await api('/api/meters', { method:'POST', body:{
+            shop_id: shop.id,
+            meter_number: meterNumber,
+            meter_type: 'electricity',
+            initial_reading: parseFloat(document.getElementById('sMeterReading').value) || 0,
+            installation_date: new Date().toISOString(),
+          }});
+          closeModal();
+          showToast(`Shop added with meter ${meterNumber}`, 'success');
+        } catch (err) {
+          closeModal();
+          showToast(`Shop added, but the meter could not be created: ${err.message}`, 'error');
+        }
+      } else {
+        closeModal();
+        showToast('Shop added', 'success');
+      }
       await renderView('shops');
     });
   });

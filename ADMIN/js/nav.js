@@ -113,6 +113,7 @@ const viewMeta = {
   dashboard: { title:'Dashboard', crumb:'Overview of your portfolio', action:null },
   complexes: { title:'Complexes', crumb:'Buildings and properties you manage', action:'Add complex' },
   shops:     { title:'Shops', crumb:'Units across all complexes', action:'Add shop' },
+  submeters: { title:'Submeters', crumb:'Electricity submeters — add, assign to a shop, and see each meter\'s full history', action:null },
   users:     { title:'Users', crumb:'Admins and tenants', action:'Add user' },
   billing:   { title:'Finance', crumb:'Add, manage, and browse every bill and payment — tenant-wise, property-wise, or by dues overview', action:null },
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
@@ -168,6 +169,7 @@ async function renderView(view){
       case 'dashboard': content.innerHTML = await dashboardView(); attachDashboardHandlers(); break;
       case 'complexes': content.innerHTML = await complexesView(); attachComplexHandlers(); break;
       case 'shops': content.innerHTML = await shopsView(); attachShopHandlers(); break;
+      case 'submeters': content.innerHTML = await submetersView(); attachSubmeterHandlers(); break;
       case 'users': content.innerHTML = await usersView(); attachUserHandlers(); break;
       case 'billing': content.innerHTML = await billingView(); attachBillingHandlers(); break;
       case 'deposits': content.innerHTML = await depositsView(); attachDepositHandlers(); break;

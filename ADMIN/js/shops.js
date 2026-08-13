@@ -6,6 +6,7 @@
    Shops with no complex fall into a "Shops without a Complex" card.
    ================================================================ */
 let _shopsSelectedComplex = null;   // null = show cards; number = complex id; 'unassigned' = orphan shops
+let _shopMeters = [];               // meters currently assigned to a shop, for the Submeter column
 
 /* Shared drill-in helper — any view that shows a complex (Complexes list,
    Dashboard complex overview, Deposits "by property") can call this to jump
@@ -21,6 +22,10 @@ async function shopsView(){
     ensureLoaded('shops','/api/shop'),
     ensureLoaded('complexes','/api/complex'),
   ]);
+  // Meters are shown per shop in the drill-down, so fetch them alongside.
+  // Non-fatal: the shop list still works if this call fails.
+  try { _shopMeters = await api('/api/meters?assigned=true'); }
+  catch (e) { _shopMeters = []; }
 
   if (_shopsSelectedComplex !== null) {
     return renderShopsForComplex(shops, complexes, _shopsSelectedComplex);
@@ -98,7 +103,7 @@ function renderShopsForComplex(shops, complexes, complexKey){
   ${filteredShops.length === 0 ? emptyStateHtml('No shops in this complex yet', 'Add a shop and assign it to this complex.', emptyIcon()) : `
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Shop #</th><th>Complex</th><th class="num">Area (sqft)</th><th class="num">Rent/mo</th><th class="num">Deposit</th><th>Status</th><th>Tenant</th><th>Agreement Start</th><th>Agreement End</th><th>Days Left</th><th></th></tr></thead>
+      <thead><tr><th>Shop #</th><th>Complex</th><th class="num">Area (sqft)</th><th class="num">Rent/mo</th><th class="num">Deposit</th><th>Status</th><th>Submeter</th><th>Tenant</th><th>Agreement Start</th><th>Agreement End</th><th>Days Left</th><th></th></tr></thead>
       <tbody>
         ${filteredShops.map(s => {
           const owner = s.assigned_to;
@@ -120,6 +125,7 @@ function renderShopsForComplex(shops, complexes, complexKey){
               <td class="num">${s.shop_rent != null ? currency(s.shop_rent) : '—'}</td>
               <td class="num">${s.shop_deposit != null ? currency(s.shop_deposit) : '—'}</td>
               <td><span class="pill ${s.status}"><span class="pill-dot"></span>${escapeHtml(s.status)}</span></td>
+              <td>${shopMeterCellHtml(s.id)}</td>
               <td>${hasTenant ? `<span class="tenant-tag">${escapeHtml(owner.name)}</span>` : '<span style="color:var(--muted); font-size:13px;">— empty —</span>'}</td>
               <td>${hasTenant && start ? dateFmt(start) : '—'}</td>
               <td>${hasTenant && end ? dateFmt(end) : '—'}</td>
@@ -138,6 +144,23 @@ function renderShopsForComplex(shops, complexes, complexKey){
 }
 
 function unlinkIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.84 12.25l1.72-1.71a5 5 0 00-7.07-7.07l-1.05 1.05M5.17 11.75l-1.71 1.71a5 5 0 007.07 7.07l1.05-1.05M8 12h8"/></svg>`; }
+
+/* Submeter cell: the meter(s) on this shop with their current reading, or a
+   one-click way to add one if there aren't any. */
+function shopMeterCellHtml(shopId){
+  const meters = (_shopMeters || []).filter(m => m.shop_id === shopId);
+  if (!meters.length){
+    return `<button type="button" class="shop-add-meter" data-add-meter-for="${shopId}">+ Add meter</button>`;
+  }
+  return meters.map(m => `
+    <div class="shop-meter-cell">
+      <button type="button" class="submeter-link mono" data-open-submeter-from-shop="${m.id}">${escapeHtml(m.meter_number)}</button>
+      <span class="shop-meter-reading mono">${Number(m.current_reading).toLocaleString('en-IN')}</span>
+      ${m.has_pending_reading ? '<span class="shop-meter-flag">new reading</span>' : ''}
+      ${!m.is_active ? '<span class="shop-meter-flag" style="color:var(--muted);">inactive</span>' : ''}
+    </div>`).join('')
+    + `<button type="button" class="shop-add-meter" data-add-meter-for="${shopId}">+ Add another</button>`;
+}
 
 function attachShopHandlers(){
   // Level 1: click a complex card to drill in
@@ -184,6 +207,18 @@ function attachShopHandlers(){
   });
   document.querySelectorAll('[data-delete-shop]').forEach(btn => {
     btn.addEventListener('click', () => confirmDelete('shop', Number(btn.dataset.deleteShop), btn.dataset.name));
+  });
+
+  // Submeter column: add a meter to this shop, or jump to a meter's history.
+  document.querySelectorAll('[data-add-meter-for]').forEach(btn => {
+    btn.addEventListener('click', () => openSubmeterModal(null, Number(btn.dataset.addMeterFor)));
+  });
+  document.querySelectorAll('[data-open-submeter-from-shop]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      submeterState.view = 'detail';
+      submeterState.detailId = Number(btn.dataset.openSubmeterFromShop);
+      navigateTo('submeters');
+    });
   });
 
   // Level 2: search box + status chips
