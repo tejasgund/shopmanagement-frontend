@@ -1,14 +1,20 @@
 /* ================================================================
-   USER/js/core.js — split from the old USER/script.js
-   Contains: CONFIG, STATE, API LAYER, TOASTS, FORMATTERS,
-   TENANT GREETING HELPER, AUTH. Must load first (everything
-   else depends on `state`, `api()`, `currency`, `escapeHtml`, etc).
+   USER/js/core.js — config, API layer, formatters, auth.
+   Loads first: every other file depends on api(), currency(),
+   escapeHtml() and friends.
    ================================================================ */
 
 /* ================================================================
-   CONFIG — set your backend URL here
+   CONFIG
    ================================================================ */
-const API_BASE_URL = ""; // relative — same origin as this page; Apache proxies /api to the backend
+const API_BASE_URL = ""; // relative — same origin; Apache proxies /api to the backend
+
+/* How tenants can pay you. Methods only — deliberately no UPI IDs or
+   account numbers, so nothing sensitive lives in the frontend.
+   Edit this one line to change what every tenant sees, or add a
+   `payment_methods` field to /api/settings/public and it will be used
+   instead automatically. */
+const PAYMENT_METHODS_FALLBACK = "Cash, UPI or bank transfer at the office.";
 
 /* ================================================================
    STATE
@@ -17,11 +23,9 @@ const state = {
   token: localStorage.getItem('tms_token') || null,
   role: localStorage.getItem('tms_role') || null,
 };
-let tpBillsData = [], tpShopsData = [], tpBillDrill = { year:null, month:null };
-let tpPaysData = [], tpPayDrill = { year:null, month:null };
 
 /* ================================================================
-   API LAYER
+   API
    ================================================================ */
 class ApiError extends Error {
   constructor(message, status){ super(message); this.status = status; }
@@ -34,27 +38,24 @@ async function api(path, { method = 'GET', body = null, auth = true } = {}) {
   let res;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
+      method, headers,
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
-    throw new ApiError(`Can't reach the server at ${API_BASE_URL}. Check the API_BASE_URL value and that the backend is running.`, 0);
+    throw new ApiError("Can't reach the server. Please check your internet and try again.", 0);
   }
 
   let data = null;
   const text = await res.text();
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = null; }
-  }
+  if (text){ try { data = JSON.parse(text); } catch { data = null; } }
 
-  if (!res.ok) {
-    let msg = `Request failed (${res.status})`;
-    if (data) {
+  if (!res.ok){
+    let msg = `Something went wrong (${res.status})`;
+    if (data){
       if (typeof data.detail === 'string') msg = data.detail;
       else if (Array.isArray(data.detail)) msg = data.detail.map(d => d.msg).join(', ');
     }
-    if (res.status === 401) { handleAuthExpired(); }
+    if (res.status === 401) handleAuthExpired();
     throw new ApiError(msg, res.status);
   }
   return data;
@@ -73,17 +74,12 @@ function showToast(message, type = 'default'){
   const stack = document.getElementById('toastStack');
   const el = document.createElement('div');
   el.className = `toast ${type}`;
-  const icon = type === 'success'
-    ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>'
-    : type === 'error'
-      ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
-      : '';
-  el.innerHTML = `${icon}<span>${escapeHtml(message)}</span>`;
+  el.textContent = message;
   stack.appendChild(el);
   setTimeout(() => {
     el.classList.add('fade-out');
     setTimeout(() => el.remove(), 250);
-  }, 3400);
+  }, 3600);
 }
 
 function escapeHtml(str){
@@ -95,57 +91,51 @@ function escapeHtml(str){
 /* ================================================================
    FORMATTERS
    ================================================================ */
-const currency = (n) => '₹' + Number(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const currency = (n) => '₹' + Number(n ?? 0).toLocaleString('en-IN', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
+
 const dateFmt = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  if (isNaN(d)) return String(iso);
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
-function daysLeftHtml(endIso){
-  if (!endIso) return '<span style="color:var(--muted);">—</span>';
-  const end = new Date(endIso);
-  if (isNaN(end)) return '<span style="color:var(--muted);">—</span>';
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  end.setHours(0,0,0,0);
-  const days = Math.round((end - today) / 86400000);
-  if (days < 0) return `<span style="color:var(--rust); font-weight:700;">Expired ${Math.abs(days)}d ago</span>`;
-  if (days === 0) return `<span style="color:var(--rust); font-weight:700;">Expires today</span>`;
-  if (days <= 30) return `<span style="color:var(--rust); font-weight:600;">${days}d left</span>`;
-  if (days <= 90) return `<span style="color:#b8860b; font-weight:600;">${days}d left</span>`;
-  return `<span style="color:var(--success);">${days}d left</span>`;
+
+function startOfToday(){
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-/* ================================================================
-   TENANT GREETING HELPER
-   ================================================================ */
-function getTimeGreeting(name){
-  const hour = new Date().getHours();
-  let timePhrase = '';
-  if (hour < 12) timePhrase = 'Good morning';
-  else if (hour < 17) timePhrase = 'Good afternoon';
-  else timePhrase = 'Good evening';
+/* Whole days from a to b (positive when b is later). */
+function daysBetween(a, b){
+  const x = new Date(a); x.setHours(0, 0, 0, 0);
+  const y = new Date(b); y.setHours(0, 0, 0, 0);
+  return Math.round((y - x) / 86400000);
+}
 
-  const creativeMessages = [
-    `${timePhrase}, ${name}! ✨`,
-    `${timePhrase}, ${name} – your shops are ready!`,
-    `${timePhrase}, ${name}! Let's get things done!`,
-    `${timePhrase}, ${name} – we're all set for you.`,
-    `${timePhrase}, ${name}! How can I help you today?`,
-  ];
-  return creativeMessages[Math.floor(Math.random() * creativeMessages.length)];
+function greetingWord(){
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function tpLoadingHtml(){
+  return `
+  <div class="tp-loading">
+    <div class="tp-skeleton tp-skeleton-hero"></div>
+    <div class="tp-skeleton"></div>
+    <div class="tp-skeleton"></div>
+  </div>`;
 }
 
 /* ================================================================
    AUTH
-   (sign-in itself happens on the root index.html; this page assumes the
-   guard script in <head> already confirmed a valid tenant session)
    ================================================================ */
 function logout(){
   localStorage.removeItem('tms_token');
   localStorage.removeItem('tms_role');
   window.location.href = '../index.html';
 }
-
-document.getElementById('tenantLogoutBtn').addEventListener('click', logout);

@@ -1,165 +1,142 @@
 /* ================================================================
-   USER/js/tenant-meters.js — "Send my meter reading"
+   USER/js/tenant-meters.js — "Meter"
 
-   Written for someone standing in their shop holding a phone. One
-   card per meter, one big button, a photo, a number, done. No jargon,
-   no multi-step upload, no talk of approvals or tariffs.
+   Written for someone standing at their meter holding a phone:
+   one card, one big button, photo, number, send.
    ================================================================ */
 
-let _tenantMeters = [];
-let _tenantReadings = [];
-
-async function loadTenantMeterSection(){
-  const host = document.getElementById('tenantMeterSection');
-  if (!host) return;
-  try {
-    const [meters, readings] = await Promise.all([
-      api('/api/tenant/meters'),
-      api('/api/tenant/meter-readings'),
-    ]);
-    _tenantMeters = meters;
-    _tenantReadings = readings;
-
-    // Nothing to show if this tenant has no submeters - keep their page clean.
-    if (!meters.length && !readings.length){ host.innerHTML = ''; return; }
-
-    host.innerHTML = tenantMeterHtml(meters, readings);
-    attachTenantMeterHandlers();
-  } catch (err) {
-    host.innerHTML = `<div class="error-banner"><span>Could not load your meters: ${escapeHtml(err.message)}</span></div>`;
+function renderMeterScreen(){
+  if (!tp.meters.length){
+    return `
+    <div class="tp-empty">
+      <div class="tp-empty-title">No meter for your shop</div>
+      <div class="tp-empty-sub">If you have an electricity submeter, ask the office to add it.</div>
+    </div>`;
   }
-}
 
-function tenantMeterHtml(meters, readings){
-  const recent = readings.slice(0, 6);
-  const rejected = readings.filter(r => r.status === 'rejected');
-  const needsAction = rejected.length > 0 ? rejected[0] : null;
+  const rejected = tp.readings.find(r => r.status === 'rejected');
+  const stillRejected = rejected &&
+    !tp.readings.some(r => r.meter_id === rejected.meter_id &&
+                           new Date(r.reading_date) > new Date(rejected.reading_date));
 
   return `
-  <div class="collapsible-section">
-    <div class="collapsible-header open" onclick="toggleCollapse(this)">
-      <h3>Electricity meter</h3>
-      <svg class="collapsible-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    ${stillRejected ? `
+    <div class="tp-alert tp-alert-late">
+      <strong>Your last photo wasn't accepted.</strong>
+      ${escapeHtml(rejected.rejection_reason || '')}<br>
+      Please take a clearer photo and send it again.
+    </div>` : ''}
+
+    ${tp.meters.map(meterCardHtml).join('')}
+    ${meterHistoryHtml()}
+  `;
+}
+
+function meterCardHtml(m){
+  return `
+  <div class="tp-meter-card">
+    <div class="tp-meter-head">
+      <div>
+        <div class="tp-meter-no">Meter ${escapeHtml(m.meter_number)}</div>
+        <div class="tp-meter-shop">${escapeHtml(m.shop_number || '')}</div>
+      </div>
     </div>
-    <div class="collapsible-body open">
 
-      ${needsAction ? `
-      <div class="tm-alert">
-        <strong>Your last reading was not accepted.</strong>
-        <div style="margin-top:4px;">${escapeHtml(needsAction.rejection_reason || '')}</div>
-        <div style="margin-top:6px; font-size:12.5px;">Please take a clearer photo and send it again.</div>
-      </div>` : ''}
-
-      ${meters.length === 0 ? `
-        <div class="empty-compact">No meter is set up for your shop yet.</div>
-      ` : meters.map(m => `
-        <div class="tm-card">
-          <div class="tm-card-head">
-            <div>
-              <div class="tm-meter-no">Meter ${escapeHtml(m.meter_number)}</div>
-              <div class="tm-shop">${escapeHtml(m.shop_number || '')}</div>
-            </div>
-            ${m.has_pending
-              ? '<span class="stamp pending">sent</span>'
-              : ''}
-          </div>
-
-          <div class="tm-prev">
-            <span>Last confirmed reading</span>
-            <strong class="mono">${Number(m.previous_reading).toLocaleString('en-IN')}</strong>
-          </div>
-
-          ${m.has_pending ? `
-            <div class="tm-waiting">
-              You've sent a reading. It's with the office for checking — you'll see your
-              bill here once it's confirmed.
-            </div>
-          ` : `
-            <button class="btn btn-primary btn-lg btn-block tm-send-btn" data-send-reading="${m.id}">
-              Send this month's reading
-            </button>
-          `}
-        </div>
-      `).join('')}
-
-      ${recent.length ? `
-      <div class="tm-history-title">Your recent readings</div>
-      <div class="tm-history">
-        ${recent.map(r => `
-        <div class="tm-history-row">
-          <div>
-            <div class="tm-history-date">${dateFmt(r.reading_date)}</div>
-            <div class="tm-history-meta">
-              You sent ${Number(r.customer_reading).toLocaleString('en-IN')}
-              ${r.status === 'approved' && r.calculated_units != null
-                ? ` · ${Number(r.calculated_units).toLocaleString('en-IN')} units used` : ''}
-            </div>
-            ${r.status === 'rejected' && r.rejection_reason
-              ? `<div class="tm-history-reason">${escapeHtml(r.rejection_reason)}</div>` : ''}
-          </div>
-          <div class="tm-history-right">
-            ${tenantReadingStatusHtml(r)}
-            ${r.bill ? `<div class="tm-history-amt mono">${currency(r.bill.amount)}</div>` : ''}
-          </div>
-        </div>`).join('')}
-      </div>` : ''}
-
+    <div class="tp-meter-prev">
+      <span>Last confirmed reading</span>
+      <strong>${Number(m.previous_reading).toLocaleString('en-IN')}</strong>
     </div>
+
+    ${m.has_pending ? `
+      <div class="tp-meter-waiting">
+        <strong>Sent ✓</strong>
+        The office is checking your photo. Your bill will appear once it's confirmed.
+      </div>
+    ` : `
+      <button class="tp-btn tp-btn-primary tp-btn-block tp-btn-lg" data-send-reading="${m.id}">
+        📷 Send this month's reading
+      </button>
+    `}
   </div>`;
 }
 
-function tenantReadingStatusHtml(r){
-  if (r.status === 'approved') return '<span class="stamp paid">confirmed</span>';
-  if (r.status === 'rejected') return '<span class="stamp pending" style="color:var(--danger);">not accepted</span>';
-  return '<span class="stamp pending">being checked</span>';
+function meterHistoryHtml(){
+  const rows = tp.readings.slice(0, 12);
+  if (!rows.length) return '';
+
+  return `
+  <div class="tp-block">
+    <div class="tp-block-head"><h2>What you've sent before</h2></div>
+    ${rows.map(r => {
+      const label = r.status === 'approved' ? 'Confirmed'
+                  : r.status === 'rejected' ? 'Not accepted' : 'Being checked';
+      const cls = r.status === 'approved' ? 'paid' : r.status === 'rejected' ? 'unpaid' : 'part';
+      return `
+      <div class="tp-row">
+        <div>
+          <div class="tp-row-title">${dateFmt(r.reading_date)}</div>
+          <div class="tp-row-sub">
+            You sent ${Number(r.customer_reading).toLocaleString('en-IN')}${
+              r.status === 'approved' && r.calculated_units != null
+                ? ` · ${Number(r.calculated_units).toLocaleString('en-IN')} units used` : ''}
+          </div>
+          ${r.status === 'rejected' && r.rejection_reason
+            ? `<div class="tp-row-warn">${escapeHtml(r.rejection_reason)}</div>` : ''}
+        </div>
+        <div class="tp-row-right">
+          <span class="tp-state tp-state-${cls}">${label}</span>
+          ${r.bill ? `<div class="tp-row-amount">${currency(r.bill.amount)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 /* ================================================================
    SEND A READING
-   Photo first (that's the bit people forget), then the number.
    ================================================================ */
 function openSendReadingModal(meterId){
-  const meter = _tenantMeters.find(m => m.id === meterId);
+  const meter = tp.meters.find(m => m.id === meterId);
   if (!meter) return;
 
+  const prev = Number(meter.previous_reading);
+
   openModal(`Meter ${meter.meter_number}`, `
-    <div class="tm-form">
-      <div class="tm-form-prev">
-        Your last confirmed reading was
-        <strong class="mono">${Number(meter.previous_reading).toLocaleString('en-IN')}</strong>.
+    <div class="tp-sheet" id="tmForm">
+      <div class="tp-sheet-note">
+        Your last confirmed reading was <strong>${prev.toLocaleString('en-IN')}</strong>.
         Today's number should be higher than this.
       </div>
 
-      <div class="field">
-        <label for="tmPhoto">1. Take a photo of the meter</label>
-        <input id="tmPhoto" type="file" accept="image/*" capture="environment" class="tm-file">
-        <div class="hint">Hold steady and get the numbers in focus. The office checks this photo.</div>
-        <div id="tmPreviewWrap" class="tm-preview" style="display:none;">
+      <div class="tp-field">
+        <label for="tmPhoto"><span class="tp-step">1</span> Take a photo of the meter</label>
+        <input id="tmPhoto" type="file" accept="image/*" capture="environment" class="tp-file">
+        <div class="tp-field-hint">Get the numbers in focus — the office reads this photo.</div>
+        <div id="tmPreviewWrap" class="tp-preview" style="display:none;">
           <img id="tmPreview" alt="The photo you selected">
         </div>
-        ${fieldErrorHtml('tmPhotoErr')}
+        <div class="tp-field-error" id="tmPhotoErr" style="display:none;"></div>
       </div>
 
-      <div class="field">
-        <label for="tmReading">2. Type the number shown on the meter</label>
+      <div class="tp-field">
+        <label for="tmReading"><span class="tp-step">2</span> Type the number on the meter</label>
         <input id="tmReading" type="number" inputmode="decimal" step="0.01" min="0"
-               class="tm-big-input mono" placeholder="e.g. ${Number(meter.previous_reading) + 250}">
-        ${fieldErrorHtml('tmReadingErr')}
+               class="tp-big-input" placeholder="${(prev + 250).toLocaleString('en-IN')}">
+        <div class="tp-field-error" id="tmReadingErr" style="display:none;"></div>
       </div>
 
-      <div class="field">
-        <label for="tmNote">Anything to tell the office? (optional)</label>
-        <input id="tmNote" placeholder="e.g. the last digit is hard to see">
+      <div class="tp-field">
+        <label for="tmNote">Anything to tell the office? <span class="tp-optional">(optional)</span></label>
+        <input id="tmNote" class="tp-text-input" placeholder="e.g. the last digit is hard to see">
       </div>
     </div>
   `, `
-    <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
-    <button class="btn btn-primary" id="tmSubmitBtn">Send to office</button>
+    <button class="tp-btn tp-btn-ghost" id="tmCancelBtn">Cancel</button>
+    <button class="tp-btn tp-btn-primary" id="tmSubmitBtn">Send</button>
   `);
 
-  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  document.getElementById('tmCancelBtn').addEventListener('click', closeModal);
 
-  // Show the chosen photo so they can see it's not blurry before sending.
   document.getElementById('tmPhoto').addEventListener('change', (e) => {
     const file = e.target.files[0];
     const wrap = document.getElementById('tmPreviewWrap');
@@ -169,18 +146,16 @@ function openSendReadingModal(meterId){
   });
 
   document.getElementById('tmSubmitBtn').addEventListener('click', async () => {
-    const form = document.querySelector('.tm-form');
-    clearFieldErrors(form);
-
+    clearFieldErrors(document.getElementById('tmForm'));
     const file = document.getElementById('tmPhoto').files[0];
     const value = parseFloat(document.getElementById('tmReading').value);
     let ok = true;
 
-    if (!file){ showFieldError('tmPhotoErr','Please take a photo of the meter'); ok = false; }
-    if (isNaN(value)){ showFieldError('tmReadingErr','Please type the number on the meter'); ok = false; }
-    else if (value < Number(meter.previous_reading)){
+    if (!file){ showFieldError('tmPhotoErr', 'Please take a photo of the meter'); ok = false; }
+    if (isNaN(value)){ showFieldError('tmReadingErr', 'Please type the number on the meter'); ok = false; }
+    else if (value < prev){
       showFieldError('tmReadingErr',
-        `That's lower than your last confirmed reading (${Number(meter.previous_reading).toLocaleString('en-IN')}). Please check the meter again.`);
+        `That's lower than your last confirmed reading (${prev.toLocaleString('en-IN')}). Please check again.`);
       ok = false;
     }
     if (!ok) return;
@@ -195,11 +170,11 @@ function openSendReadingModal(meterId){
     const btn = document.getElementById('tmSubmitBtn');
     const original = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Sending…';
+    btn.innerHTML = '<span class="tp-spinner"></span> Sending…';
 
     try {
-      // FormData must NOT go through api(), which sets a JSON content type -
-      // the browser has to set the multipart boundary itself.
+      // FormData must not go through api() — the browser has to set the
+      // multipart boundary itself.
       const res = await fetch(`${API_BASE_URL}/api/tenant/meter-readings`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${state.token}` },
@@ -210,7 +185,7 @@ function openSendReadingModal(meterId){
 
       closeModal();
       showToast('Sent. The office will check your photo.', 'success');
-      loadTenantMeterSection();
+      await refreshTenantPortal(false);
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = original;
@@ -219,7 +194,7 @@ function openSendReadingModal(meterId){
   });
 }
 
-function attachTenantMeterHandlers(){
+function attachMeterHandlers(){
   document.querySelectorAll('[data-send-reading]').forEach(btn =>
     btn.addEventListener('click', () => openSendReadingModal(Number(btn.dataset.sendReading))));
 }
