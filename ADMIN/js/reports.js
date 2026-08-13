@@ -112,6 +112,7 @@ async function generateReport(tab){
       const rep = await api(`/api/reports/business-overview?${params}`);
       state._lastReportData = { tab, rep, start, end, complexId };
       resultsEl.innerHTML = renderBusinessOverviewHtml(rep, start, end);
+      attachBusinessOverviewHandlers(rep);
       document.getElementById('exportReportBtn').style.display = 'inline-flex';
       document.getElementById('exportReportBtn').onclick = () => exportReportPdf();
 
@@ -179,13 +180,13 @@ async function generateReport(tab){
         <div class="stat-row" style="margin-bottom:18px;">
           <div class="card stat-card"><div class="label">Deposit required</div><div class="value mono">${currency(s.total_deposit_required)}</div></div>
           <div class="card stat-card accent-green"><div class="label">Collected</div><div class="value mono">${currency(s.total_deposit_collected)}</div><div class="sub">${s.tenants_with_full_deposit} tenants fully paid</div></div>
-          <div class="card stat-card accent-rust"><div class="label">Remaining</div><div class="value mono">${currency(s.total_deposit_remaining)}</div><div class="sub">${s.tenants_with_partial_deposit} partial · ${s.tenants_with_no_deposit} none</div></div>
+          <button type="button" id="depRemainingCard" data-filtered="0" class="card stat-card accent-rust glance-card" style="text-align:left; cursor:pointer;" title="Click to show only tenants with a balance owing"><div class="label">Remaining</div><div class="value mono">${currency(s.total_deposit_remaining)}</div><div class="sub">${s.tenants_with_partial_deposit} partial · ${s.tenants_with_no_deposit} none</div></button>
         </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Tenant</th><th>Mobile</th><th>Complex</th><th>Shop</th><th class="num">Required</th><th class="num">Paid</th><th class="num">Remaining</th><th>Status</th><th>Last payment</th></tr></thead>
-            <tbody>
-              ${rep.records.map(r=>`<tr>
+            <tbody id="depositRecordsBody">
+              ${rep.records.map(r=>`<tr data-remaining="${r.deposit_remaining > 0 ? '1' : '0'}">
                 <td>${escapeHtml(r.user_name)}</td>
                 <td class="mono">${escapeHtml(r.mobile)}</td>
                 <td>${escapeHtml(r.complex_name)}</td>
@@ -200,6 +201,7 @@ async function generateReport(tab){
           </table>
         </div>
       `;
+      attachDepositReportHandlers();
       document.getElementById('exportReportBtn').style.display = 'inline-flex';
       document.getElementById('exportReportBtn').onclick = () => exportReportPdf();
 
@@ -211,9 +213,9 @@ async function generateReport(tab){
       const s = rep.summary;
       resultsEl.innerHTML = `
         <div class="stat-row" style="margin-bottom:18px;">
-          <div class="card stat-card"><div class="label">Total shops</div><div class="value">${s.total_shops}</div></div>
-          <div class="card stat-card accent-green"><div class="label">Occupied</div><div class="value">${s.occupied}</div></div>
-          <div class="card stat-card"><div class="label">Available</div><div class="value">${s.available}</div></div>
+          <button type="button" data-occ-filter="all" class="card stat-card glance-card" style="text-align:left; cursor:pointer;"><div class="label">Total shops</div><div class="value">${s.total_shops}</div></button>
+          <button type="button" data-occ-filter="occupied" class="card stat-card accent-green glance-card" style="text-align:left; cursor:pointer;"><div class="label">Occupied</div><div class="value">${s.occupied}</div></button>
+          <button type="button" data-occ-filter="available" class="card stat-card glance-card" style="text-align:left; cursor:pointer;"><div class="label">Available</div><div class="value">${s.available}</div></button>
           <div class="card stat-card"><div class="label">Occupancy rate</div><div class="value">${s.occupancy_rate_percent}%</div></div>
         </div>
         ${rep.by_complex?.length ? `
@@ -231,10 +233,10 @@ async function generateReport(tab){
           </tr>`).join('')}</tbody>
           </table>
         </div>` : ''}
-        <h3 style="font-size:15.5px; margin:0 0 12px;">Shop details</h3>
+        <h3 style="font-size:15.5px; margin:0 0 12px;" id="occShopDetailsHeading">Shop details</h3>
         <div class="table-wrap">
           <table><thead><tr><th>Shop</th><th>Complex</th><th class="num">Area (sqft)</th><th class="num">Rent</th><th>Status</th><th>Tenant</th></tr></thead>
-          <tbody>${rep.shop_details.map(s=>`<tr>
+          <tbody id="occShopDetailsBody">${rep.shop_details.map(s=>`<tr data-shop-status="${s.status}">
             <td class="mono"><strong>${escapeHtml(s.shop_number)}</strong></td>
             <td>${escapeHtml(s.complex_name)}</td>
             <td class="num">${Number(s.area_sqft).toLocaleString('en-IN')}</td>
@@ -245,6 +247,7 @@ async function generateReport(tab){
           </table>
         </div>
       `;
+      attachOccupancyHandlers();
       document.getElementById('exportReportBtn').style.display = 'inline-flex';
       document.getElementById('exportReportBtn').onclick = () => exportReportPdf();
 
@@ -469,9 +472,13 @@ function renderBusinessOverviewHtml(rep, start, end){
 
   <div class="stat-row" style="margin-bottom:18px;">
     <div class="card stat-card accent-green"><div class="label">Collection efficiency</div><div class="value">${ce.collection_efficiency_percent}%</div><div class="sub">${currency(ce.total_collected_in_range)} of ${currency(ce.total_billed_in_range)} billed</div></div>
-    <div class="card stat-card accent-rust"><div class="label">Total outstanding</div><div class="value mono">${currency(aging.total_outstanding)}</div><div class="sub">across all unpaid bills</div></div>
-    <div class="card stat-card"><div class="label">90+ days overdue</div><div class="value mono">${currency(aging.buckets['90_plus'])}</div><div class="sub">${aging.bucket_counts['90_plus']} bill(s) — highest risk</div></div>
-    <div class="card stat-card"><div class="label">Top defaulter</div><div class="value" style="font-size:16px;">${rep.top_defaulters[0] ? escapeHtml(rep.top_defaulters[0].user_name) : '—'}</div><div class="sub">${rep.top_defaulters[0] ? currency(rep.top_defaulters[0].total_pending)+' pending' : 'no outstanding dues'}</div></div>
+    <button type="button" id="boOutstandingCard" class="card stat-card accent-rust glance-card" style="text-align:left; cursor:pointer;" title="View these bills in Billing"><div class="label">Total outstanding</div><div class="value mono">${currency(aging.total_outstanding)}</div><div class="sub">across all unpaid bills</div></button>
+    <button type="button" id="boOverdue90Card" class="card stat-card glance-card" style="text-align:left; cursor:pointer;" title="View overdue bills in Billing"><div class="label">90+ days overdue</div><div class="value mono">${currency(aging.buckets['90_plus'])}</div><div class="sub">${aging.bucket_counts['90_plus']} bill(s) — highest risk</div></button>
+    ${rep.top_defaulters[0] ? `
+    <button type="button" id="boTopDefaulterCard" class="card stat-card glance-card" style="text-align:left; cursor:pointer;" title="Open ${escapeHtml(rep.top_defaulters[0].user_name)}'s statement"><div class="label">Top defaulter</div><div class="value" style="font-size:16px;">${escapeHtml(rep.top_defaulters[0].user_name)}</div><div class="sub">${currency(rep.top_defaulters[0].total_pending)} pending</div></button>
+    ` : `
+    <div class="card stat-card"><div class="label">Top defaulter</div><div class="value" style="font-size:16px;">—</div><div class="sub">no outstanding dues</div></div>
+    `}
   </div>
 
   <div class="card" style="margin-bottom:18px;">
@@ -511,7 +518,7 @@ function renderBusinessOverviewHtml(rep, start, end){
         <thead><tr><th>Tenant</th><th>Mobile</th><th class="num">Total pending</th><th>Oldest due</th><th></th></tr></thead>
         <tbody>
           ${rep.top_defaulters.map(d=>`<tr>
-            <td><strong>${escapeHtml(d.user_name||'—')}</strong></td>
+            <td>${d.user_id ? `<a href="#" data-defaulter-user="${d.user_id}" data-defaulter-name="${escapeHtml(d.user_name||'')}" style="color:var(--green-deep); font-weight:700; text-decoration:none;">${escapeHtml(d.user_name||'—')}</a>` : `<strong>${escapeHtml(d.user_name||'—')}</strong>`}</td>
             <td class="mono">${escapeHtml(d.mobile||'—')}</td>
             <td class="num"><span style="color:var(--rust);font-weight:700;">${currency(d.total_pending)}</span></td>
             <td>${dateFmt(d.oldest_due_date)}</td>
@@ -521,6 +528,57 @@ function renderBusinessOverviewHtml(rep, start, end){
       </table>
     </div>`}
   </div>`;
+}
+
+function attachBusinessOverviewHandlers(rep){
+  document.getElementById('boOutstandingCard')?.addEventListener('click', () => {
+    pendingBillsViewFilter = 'outstanding';
+    navigateTo('billing');
+  });
+  document.getElementById('boOverdue90Card')?.addEventListener('click', () => {
+    pendingBillsViewFilter = 'overdue';
+    navigateTo('billing');
+  });
+  document.getElementById('boTopDefaulterCard')?.addEventListener('click', () => {
+    const d = rep.top_defaulters[0];
+    if (d && d.user_id) openTenantFullStatementModal(d.user_id, d.user_name);
+  });
+  document.querySelectorAll('[data-defaulter-user]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      openTenantFullStatementModal(Number(a.dataset.defaulterUser), a.dataset.defaulterName);
+    });
+  });
+}
+
+/* ---- Occupancy tab: Total/Occupied/Available cards filter the shop-details table below ---- */
+function attachOccupancyHandlers(){
+  const rows = () => document.querySelectorAll('#occShopDetailsBody tr[data-shop-status]');
+  const btns = () => document.querySelectorAll('[data-occ-filter]');
+  const setActive = (activeBtn) => {
+    btns().forEach(b => { b.style.borderColor = ''; b.style.boxShadow = ''; });
+    if (activeBtn) { activeBtn.style.borderColor = 'var(--green)'; activeBtn.style.boxShadow = '0 0 0 2px rgba(47,111,79,0.15)'; }
+  };
+  btns().forEach(btn => {
+    btn.addEventListener('click', () => {
+      const filter = btn.dataset.occFilter;
+      rows().forEach(tr => { tr.style.display = (filter === 'all' || tr.dataset.shopStatus === filter) ? '' : 'none'; });
+      setActive(filter === 'all' ? null : btn);
+      document.getElementById('occShopDetailsHeading').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
+/* ---- Deposits tab: "Remaining" card filters the deposit table below to balances owing ---- */
+function attachDepositReportHandlers(){
+  const rows = () => document.querySelectorAll('#depositRecordsBody tr[data-remaining]');
+  document.getElementById('depRemainingCard')?.addEventListener('click', function(){
+    const showingOnlyRemaining = this.dataset.filtered === '1';
+    rows().forEach(tr => { tr.style.display = (showingOnlyRemaining || tr.dataset.remaining === '1') ? '' : 'none'; });
+    this.dataset.filtered = showingOnlyRemaining ? '0' : '1';
+    this.style.borderColor = showingOnlyRemaining ? '' : 'var(--green)';
+    this.style.boxShadow = showingOnlyRemaining ? '' : '0 0 0 2px rgba(47,111,79,0.15)';
+  });
 }
 
 /* ---------- Tenant Statement tab: full bill+payment ledger for one tenant ---------- */
