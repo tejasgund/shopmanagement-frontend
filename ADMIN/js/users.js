@@ -40,7 +40,7 @@ async function usersView(){
           const dateStr = endDate ? dateFmt(endDate) : '—';
           return `
           <tr data-search="${escapeHtml(u.name+' '+u.mobile+' '+(u.email||''))}">
-            <td><strong>${escapeHtml(u.name)}</strong>${u.email ? `<div style="font-size:12px;color:var(--muted);">${escapeHtml(u.email)}</div>` : ''}</td>
+            <td>${u.role === 'tenant' ? tenantLinkHtml(u.id, u.name) : `<strong>${escapeHtml(u.name)}</strong>`}${u.email ? `<div style="font-size:12px;color:var(--muted);">${escapeHtml(u.email)}</div>` : ''}</td>
             <td class="mono">${escapeHtml(u.mobile)}</td>
             <td><span class="pill role-${u.role}"><span class="pill-dot"></span>${escapeHtml(u.role)}</span></td>
             <td><span class="pill ${u.is_active ? 'active-pill' : 'inactive-pill'}"><span class="pill-dot"></span>${u.is_active ? 'active' : 'inactive'}</span></td>

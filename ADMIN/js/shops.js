@@ -7,6 +7,15 @@
    ================================================================ */
 let _shopsSelectedComplex = null;   // null = show cards; number = complex id; 'unassigned' = orphan shops
 
+/* Shared drill-in helper — any view that shows a complex (Complexes list,
+   Dashboard complex overview, Deposits "by property") can call this to jump
+   straight to that complex's shop list, reusing the Level 1→2 drill already
+   built here instead of each view inventing its own navigation. */
+function goToShopsForComplex(complexId){
+  _shopsSelectedComplex = complexId;
+  navigateTo('shops');
+}
+
 async function shopsView(){
   const [shops, complexes] = await Promise.all([
     ensureLoaded('shops','/api/shop'),

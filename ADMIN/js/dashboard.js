@@ -87,7 +87,7 @@ async function dashboardView(){
   <h3 style="font-size:15.5px; margin:0 0 14px;">Complex overview</h3>
   <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:14px; margin-bottom:24px;">
     ${complexStats.map(c=>`
-    <div class="complex-stat-card">
+    <button type="button" class="complex-stat-card" data-open-complex-shops="${c.id}" style="text-align:left; width:100%; cursor:pointer; font-family:inherit; color:inherit;" title="View ${escapeHtml(c.name)}'s shops">
       <div class="c-name">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg>
         ${escapeHtml(c.name)}
@@ -101,7 +101,7 @@ async function dashboardView(){
         <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Monthly Rent</div><div style="font-family:var(--font-mono); font-weight:700; color:var(--green-deep); font-size:14px;">${currency(c.monthlyRent)}</div></div>
         <div><div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">Pending Rent</div><div style="font-family:var(--font-mono); font-weight:700; color:${c.pendingRent>0?'var(--rust)':'var(--success)'}; font-size:14px;">${currency(c.pendingRent)}</div></div>
       </div>
-    </div>`).join('')}
+    </button>`).join('')}
   </div>` : ''}
 
   <div class="card">
@@ -115,7 +115,7 @@ async function dashboardView(){
             const tenant = state.cache.users.find(u=>u.id===b.user_id);
             return `<tr>
               <td class="mono">#${b.id}</td>
-              <td>${escapeHtml(tenant?.name || ('User #'+b.user_id))}</td>
+              <td>${tenant ? tenantLinkHtml(b.user_id, tenant.name) : ('User #'+b.user_id)}</td>
               <td>${escapeHtml(b.bill_type)}</td>
               <td class="num">${currency(b.amount)}</td>
               <td>${stampHtml(b.status)}</td>
@@ -136,6 +136,7 @@ function attachDashboardHandlers(){
     });
   });
   document.getElementById('expiringAgreementsCard')?.addEventListener('click', openExpiringAgreementsModal);
+  document.querySelectorAll('[data-open-complex-shops]').forEach(btn => btn.addEventListener('click', () => goToShopsForComplex(Number(btn.dataset.openComplexShops))));
 }
 
 /* ---- Expiring agreements drill-down (opened from the dashboard card) ---- */

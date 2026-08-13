@@ -477,7 +477,7 @@ function billingFilteredListHtml(bills){
         ${sorted.map(b => `
         <tr>
           <td class="mono">#${b.id}</td>
-          <td>${escapeHtml(b.user?.name || `#${b.user_id}`)}</td>
+          <td>${b.user ? tenantLinkHtml(b.user_id, b.user.name) : `#${b.user_id}`}</td>
           <td class="mono">${escapeHtml(b.shop?.shop_number || `#${b.shop_id}`)}</td>
           <td>${escapeHtml(b.complexName)}</td>
           <td>${escapeHtml(b.bill_type)}</td>
@@ -518,7 +518,7 @@ function billingPaymentsListHtml(payments){
         ${sorted.map(p => `
         <tr>
           <td>${dateFmt(p.payment_date)}</td>
-          <td>${escapeHtml(p.user?.name || (p.bill ? `#${p.bill.user_id}` : '—'))}</td>
+          <td>${p.user ? tenantLinkHtml(p.bill?.user_id ?? p.user_id, p.user.name) : (p.bill ? `#${p.bill.user_id}` : '—')}</td>
           <td class="mono">${escapeHtml(p.shop?.shop_number || '—')}</td>
           <td>${escapeHtml(p.complexName)}</td>
           <td class="mono">#${p.bill_id}${p.bill ? ' · '+escapeHtml(p.bill.bill_type) : ''}</td>

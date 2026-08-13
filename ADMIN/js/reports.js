@@ -148,7 +148,7 @@ async function generateReport(tab){
             <tbody>
               ${rep.records.map(r=>`<tr>
                 <td class="mono">#${r.bill_id}</td>
-                <td>${escapeHtml(r.user_name)}</td>
+                <td>${tenantLinkHtml(r.user_id, r.user_name)}</td>
                 <td class="mono">${escapeHtml(r.mobile)}</td>
                 <td>${escapeHtml(r.complex_name)}</td>
                 <td class="mono">${escapeHtml(r.shop_number)}</td>
@@ -187,7 +187,7 @@ async function generateReport(tab){
             <thead><tr><th>Tenant</th><th>Mobile</th><th>Complex</th><th>Shop</th><th class="num">Required</th><th class="num">Paid</th><th class="num">Remaining</th><th>Status</th><th>Last payment</th></tr></thead>
             <tbody id="depositRecordsBody">
               ${rep.records.map(r=>`<tr data-remaining="${r.deposit_remaining > 0 ? '1' : '0'}">
-                <td>${escapeHtml(r.user_name)}</td>
+                <td>${tenantLinkHtml(r.user_id, r.user_name)}</td>
                 <td class="mono">${escapeHtml(r.mobile)}</td>
                 <td>${escapeHtml(r.complex_name)}</td>
                 <td class="mono">${escapeHtml(r.shop_number)}</td>
@@ -242,7 +242,7 @@ async function generateReport(tab){
             <td class="num">${Number(s.area_sqft).toLocaleString('en-IN')}</td>
             <td class="num">${currency(s.shop_rent)}</td>
             <td><span class="pill ${s.status}"><span class="pill-dot"></span>${s.status}</span></td>
-            <td>${s.tenant_name ? `<span class="tenant-tag">${escapeHtml(s.tenant_name)}</span> <span style="color:var(--muted); font-size:12px;">${escapeHtml(s.tenant_mobile||'')}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
+            <td>${s.tenant_name ? `${tenantLinkHtml(s.tenant_id, s.tenant_name)} <span style="color:var(--muted); font-size:12px;">${escapeHtml(s.tenant_mobile||'')}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
           </tr>`).join('')}</tbody>
           </table>
         </div>
@@ -264,7 +264,7 @@ async function generateReport(tab){
             <thead><tr><th>Tenant</th><th>Shops</th><th class="num">Billed</th><th class="num">Collected</th><th class="num">Pending</th><th class="num">Deposit paid</th><th class="num">Deposit rem.</th><th>Payments</th><th>Last payment</th></tr></thead>
             <tbody>
               ${recs.map(r=>`<tr>
-                <td><strong>${escapeHtml(r.user_name)}</strong><div style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
+                <td>${tenantLinkHtml(r.user_id, r.user_name)}<div style="font-size:12px; color:var(--muted);">${escapeHtml(r.mobile)}</div></td>
                 <td class="mono" style="font-size:12.5px;">${r.shops?.map(s=>escapeHtml(s.shop_number)).join(', ')||'—'}</td>
                 <td class="num">${currency(r.total_billed)}</td>
                 <td class="num">${currency(r.total_collected)}</td>

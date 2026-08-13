@@ -945,7 +945,7 @@ async function loadFinanceOverview(){
           <thead><tr><th>Tenant</th><th>Complex</th><th>Shops</th><th class="num">Monthly rent</th><th class="num">Rent pending</th><th class="num">Deposit paid</th><th class="num">Deposit remaining</th><th>Last payment</th></tr></thead>
           <tbody>
             ${d.tenants.map(t=>`<tr>
-              <td><strong>${escapeHtml(t.user_name)}</strong><div style="font-size:12px; color:var(--muted);">${escapeHtml(t.mobile)}</div></td>
+              <td>${tenantLinkHtml(t.user_id, t.user_name)}<div style="font-size:12px; color:var(--muted);">${escapeHtml(t.mobile)}</div></td>
               <td>${escapeHtml(t.complex_name)}</td>
               <td class="mono">${(t.shops||[]).join(', ')}</td>
               <td class="num">${currency(t.monthly_rent)}</td>
@@ -962,7 +962,7 @@ async function loadFinanceOverview(){
       <h3 style="font-size:15.5px; margin:0 0 12px;">Recent rent payments</h3>
       <div class="table-wrap" style="margin-bottom:18px;">
         <table><thead><tr><th>Tenant</th><th>Shop</th><th>Type</th><th class="num">Amount</th><th>Method</th><th>Date</th></tr></thead>
-        <tbody>${d.recent_payments.map(p=>`<tr><td>${escapeHtml(p.user_name)}</td><td class="mono">${escapeHtml(p.shop_number)}</td><td>${escapeHtml(p.bill_type)}</td><td class="num">${currency(p.amount)}</td><td>${escapeHtml(p.payment_method)}</td><td>${dateFmt(p.payment_date)}</td></tr>`).join('')}</tbody>
+        <tbody>${d.recent_payments.map(p=>`<tr><td>${tenantLinkHtml(p.user_id, p.user_name)}</td><td class="mono">${escapeHtml(p.shop_number)}</td><td>${escapeHtml(p.bill_type)}</td><td class="num">${currency(p.amount)}</td><td>${escapeHtml(p.payment_method)}</td><td>${dateFmt(p.payment_date)}</td></tr>`).join('')}</tbody>
         </table>
       </div>` : ''}
 
@@ -970,7 +970,7 @@ async function loadFinanceOverview(){
       <h3 style="font-size:15.5px; margin:0 0 12px;">Recent deposit payments</h3>
       <div class="table-wrap">
         <table><thead><tr><th>Tenant</th><th>Shop</th><th class="num">Amount</th><th>Date</th><th>Remarks</th></tr></thead>
-        <tbody>${d.recent_deposit_payments.map(p=>`<tr><td>${escapeHtml(p.user_name)}</td><td class="mono">${escapeHtml(p.shop_number)}</td><td class="num">${currency(p.amount)}</td><td>${dateFmt(p.payment_date)}</td><td>${escapeHtml(p.remarks||'—')}</td></tr>`).join('')}</tbody>
+        <tbody>${d.recent_deposit_payments.map(p=>`<tr><td>${tenantLinkHtml(p.user_id, p.user_name)}</td><td class="mono">${escapeHtml(p.shop_number)}</td><td class="num">${currency(p.amount)}</td><td>${dateFmt(p.payment_date)}</td><td>${escapeHtml(p.remarks||'—')}</td></tr>`).join('')}</tbody>
         </table>
       </div>` : ''}
     `;

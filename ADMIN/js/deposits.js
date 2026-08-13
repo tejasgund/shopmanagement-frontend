@@ -88,7 +88,7 @@ function depositsByTenantHtml(){
   return toolbar + `
   <div class="deposit-group-grid">
     ${rows.map(r => `
-    <div class="card deposit-group-card">
+    <div class="card deposit-group-card clickable-card" data-open-tenant-deposit="${r.user.id}" data-tenant-name="${escapeHtml(r.user.name)}" title="View ${escapeHtml(r.user.name)}'s full statement">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px;">
         <div>
           <div style="font-weight:700; font-size:14.5px;">${escapeHtml(r.user.name)}</div>
@@ -132,7 +132,7 @@ function depositsByPropertyHtml(){
   return `
   <div class="deposit-group-grid">
     ${groups.map(g => `
-    <div class="card deposit-group-card">
+    <div class="card deposit-group-card clickable-card" data-open-complex-deposit="${g.id}" title="View ${escapeHtml(g.name)}'s shops">
       <div style="font-weight:700; font-size:14.5px; margin-bottom:4px;">${escapeHtml(g.name)}</div>
       <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">${g.occupiedCount}/${g.shopCount} shops occupied</div>
       <div class="billing-stat-line"><span>Required</span><strong>${currency(g.required)}</strong></div>
@@ -179,11 +179,21 @@ function attachDepositsBodyHandlers(){
     state.deposits.showInactive = e.target.checked;
     renderDepositsBody();
   });
-  document.querySelectorAll('[data-deposit-record]').forEach(btn => btn.addEventListener('click', () => openDepositModal(Number(btn.dataset.depositRecord))));
+  document.querySelectorAll('[data-deposit-record]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openDepositModal(Number(btn.dataset.depositRecord));
+  }));
   document.querySelectorAll('[data-edit-deposit]').forEach(btn => btn.addEventListener('click', () => openEditDepositModal(Number(btn.dataset.editDeposit))));
   document.querySelectorAll('[data-delete-deposit]').forEach(btn => btn.addEventListener('click', () => {
     const dp = (state.cache.deposits || []).find(x => x.id === Number(btn.dataset.deleteDeposit));
     if (dp) confirmDeleteDeposit(dp);
+  }));
+  document.querySelectorAll('[data-open-tenant-deposit]').forEach(card => card.addEventListener('click', (e) => {
+    if (e.target.closest('[data-deposit-record]')) return;
+    openTenantFullStatementModal(Number(card.dataset.openTenantDeposit), card.dataset.tenantName);
+  }));
+  document.querySelectorAll('[data-open-complex-deposit]').forEach(card => card.addEventListener('click', () => {
+    goToShopsForComplex(Number(card.dataset.openComplexDeposit));
   }));
   attachSearchFilter();
 }

@@ -164,6 +164,24 @@ async function initAdminUser(){
 }
 
 /* ================================================================
+   TENANT PROFILE LINKS
+   One helper + one delegated listener so that everywhere a tenant's
+   name is shown (Billing, Reports, Finance, Dashboard, Users…), it's
+   clickable into their full statement — without every view having to
+   wire its own click handler.
+   ================================================================ */
+function tenantLinkHtml(userId, name, extraStyle=''){
+  if (!userId) return escapeHtml(name || '—');
+  return `<a href="#" data-tenant-link="${userId}" data-tenant-link-name="${escapeHtml(name||'')}" style="color:var(--green-deep); font-weight:600; text-decoration:none; ${extraStyle}">${escapeHtml(name || '—')}</a>`;
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-tenant-link]');
+  if (!el) return;
+  e.preventDefault();
+  openTenantFullStatementModal(Number(el.dataset.tenantLink), el.dataset.tenantLinkName);
+});
+
+/* ================================================================
    SHARED WITH TENANT PORTAL
    (also used here by the admin's own Ledger view — kept in sync with
    the identical copy in ../USER/script.js)

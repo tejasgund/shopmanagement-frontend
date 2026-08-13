@@ -7,25 +7,35 @@
    COMPLEXES VIEW
    ================================================================ */
 async function complexesView(){
-  const complexes = await ensureLoaded('complexes','/api/complex');
+  const [complexes, shops] = await Promise.all([
+    ensureLoaded('complexes','/api/complex'),
+    ensureLoaded('shops','/api/shop'),
+  ]);
   return `
   <div class="toolbar"><input class="search-input" id="tableSearch" placeholder="Search complexes…"></div>
   ${complexes.length === 0 ? emptyStateHtml('No complexes yet', 'Add your first complex to start assigning shops to it.', emptyIcon()) : `
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Name</th><th>Address</th><th>Description</th><th>Created</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Address</th><th>Description</th><th>Shops</th><th>Created</th><th></th></tr></thead>
       <tbody>
-        ${complexes.map(c => `
+        ${complexes.map(c => {
+          const cShops = shops.filter(s => s.complex_id === c.id);
+          const occ = cShops.filter(s => s.status === 'occupied').length;
+          return `
           <tr data-search="${escapeHtml(c.name+' '+c.address)}">
             <td><strong>${escapeHtml(c.name)}</strong></td>
             <td>${escapeHtml(c.address)}</td>
             <td>${escapeHtml(c.description || '—')}</td>
+            <td>${cShops.length > 0
+              ? `<button type="button" data-open-complex-shops="${c.id}" style="background:none; border:none; padding:0; color:var(--green-deep); font-weight:700; cursor:pointer; text-decoration:none; font-size:13px;">${cShops.length} shop${cShops.length!==1?'s':''} · ${occ} occupied</button>`
+              : '<span style="color:var(--muted); font-size:13px;">No shops yet</span>'}</td>
             <td>${dateFmt(c.created_at)}</td>
             <td><div class="row-actions">
               <button class="btn-icon" data-edit-complex="${c.id}" aria-label="Edit">${editIcon()}</button>
               <button class="btn-icon" data-delete-complex="${c.id}" data-name="${escapeHtml(c.name)}" aria-label="Delete">${trashIcon()}</button>
             </div></td>
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>
   </div>`}`;
@@ -37,4 +47,5 @@ function trashIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fi
 function attachComplexHandlers(){
   document.querySelectorAll('[data-edit-complex]').forEach(btn => btn.addEventListener('click', () => openEditComplexModal(Number(btn.dataset.editComplex))));
   document.querySelectorAll('[data-delete-complex]').forEach(btn => btn.addEventListener('click', () => confirmDelete('complex', Number(btn.dataset.deleteComplex), btn.dataset.name)));
+  document.querySelectorAll('[data-open-complex-shops]').forEach(btn => btn.addEventListener('click', () => goToShopsForComplex(Number(btn.dataset.openComplexShops))));
 }
