@@ -217,6 +217,19 @@ input,textarea,select{ font-family:inherit; font-size:16px; }  /* 16px stops iOS
 .tp-row-amount{ font-family:var(--font-mono); font-weight:700; font-size:14.5px; }
 .tp-tick{ color:var(--success); font-size:18px; font-weight:700; }
 .tp-tick-big{ color:var(--success); font-size:24px; font-weight:700; line-height:1; }
+.tp-reading-card{
+  padding:14px 16px; border-top:1px solid var(--line); background:var(--paper);
+}
+.tp-reading-grid{
+  display:grid; grid-template-columns:1fr 1fr; gap:10px 14px;
+}
+.tp-reading-kv{ display:flex; flex-direction:column; gap:2px; }
+.tp-reading-kv span{ font-size:11.5px; color:var(--muted); }
+.tp-reading-kv strong{ font-family:var(--font-mono); font-weight:700; font-size:14px; }
+.tp-reading-actions{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  margin-top:12px; padding-top:12px; border-top:1px dashed var(--line);
+}
 .tp-inline-note{
   padding:10px 16px; border-top:1px solid var(--line);
   font-size:12.5px; color:var(--muted); background:var(--paper);

@@ -161,6 +161,15 @@ const STRINGS = {
   'meter.currentPhoto':{ mr: 'सध्याचा फोटो',    en: 'Current reading' },
   'meter.oldPhoto':   { mr: 'मागील फोटो',      en: 'Previous reading' },
   'meter.photoTitle': { mr: 'मीटर फोटो',       en: 'Meter photo' },
+  'meter.date':       { mr: 'तारीख',           en: 'Date' },
+  'meter.unit':       { mr: 'युनिट',           en: 'Unit' },
+  'meter.pricePerUnit':{ mr: 'प्रति युनिट दर',  en: 'Price/unit' },
+  'meter.billTotal':  { mr: 'बिल रक्कम',       en: 'Bill total' },
+  'meter.billingPeriod':{ mr: 'बिलिंग कालावधी', en: 'Billing period' },
+  'meter.day':        { mr: 'दिवस',            en: 'day' },
+  'meter.days':       { mr: 'दिवस',            en: 'days' },
+  'meter.viewPhoto':  { mr: 'फोटो पहा',        en: 'View photo' },
+  'meter.viewBill':   { mr: 'बिल पहा',         en: 'View bill' },
 
   /* ---- send reading form ---- */
   'form.lastWas':     { mr: 'तुमचे शेवटचे मंजूर रीडिंग होते',  en: 'Your last confirmed reading was' },

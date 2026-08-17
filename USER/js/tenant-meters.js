@@ -91,29 +91,61 @@ function meterHistoryHtml(){
   return `
   <div class="tp-block">
     <div class="tp-block-head"><h2>${t('meter.history')}</h2></div>
-    ${rows.map(r => {
-      const label = r.status === 'approved' ? t('meter.confirmed')
-                  : r.status === 'rejected' ? t('meter.rejected') : t('meter.checking');
-      const cls = r.status === 'approved' ? 'paid' : r.status === 'rejected' ? 'unpaid' : 'part';
-      return `
-      <div class="tp-row">
-        <div>
-          <div class="tp-row-title">${dateFmt(r.reading_date)}</div>
-          <div class="tp-row-sub">
-            ${t('meter.youSent')} ${Number(r.customer_reading).toLocaleString('en-IN')}${
-              r.status === 'approved' && r.calculated_units != null
-                ? ` · ${Number(r.calculated_units).toLocaleString('en-IN')} ${t('meter.unitsUsed')}` : ''}
-          </div>
-          ${r.status === 'rejected' && r.rejection_reason
-            ? `<div class="tp-row-warn">${escapeHtml(r.rejection_reason)}</div>` : ''}
-        </div>
-        <div class="tp-row-right">
-          <span class="tp-state tp-state-${cls}">${label}</span>
-          ${r.bill ? `<div class="tp-row-amount">${currency(r.bill.amount)}</div>` : ''}
-        </div>
-      </div>`;
-    }).join('')}
+    ${rows.map(r => r.status === 'approved' ? approvedReadingCardHtml(r) : pendingRejectedRowHtml(r)).join('')}
   </div>`;
+}
+
+/* Approved readings get a compact card with all six figures + actions.
+   Pending/rejected readings keep the plain row below, unchanged. */
+function approvedReadingCardHtml(r){
+  return `
+  <div class="tp-reading-card">
+    <div class="tp-reading-grid">
+      <div class="tp-reading-kv"><span>${t('meter.date')}</span><strong>${dateFmt(r.reading_date)}</strong></div>
+      <div class="tp-reading-kv"><span>${t('meter.unit')}</span><strong>${Number(r.customer_reading).toLocaleString('en-IN')}</strong></div>
+      <div class="tp-reading-kv"><span>${t('meter.unitsUsed')}</span><strong>${r.calculated_units != null ? Number(r.calculated_units).toLocaleString('en-IN') : '—'}</strong></div>
+      <div class="tp-reading-kv"><span>${t('meter.pricePerUnit')}</span><strong>${r.unit_price_applied != null ? currency(r.unit_price_applied) : '—'}</strong></div>
+      <div class="tp-reading-kv"><span>${t('meter.billTotal')}</span><strong>${r.bill ? currency(r.bill.amount) : '—'}</strong></div>
+      <div class="tp-reading-kv"><span>${t('meter.billingPeriod')}</span><strong>${billingPeriodLabel(r)}</strong></div>
+    </div>
+    <div class="tp-reading-actions">
+      ${r.has_photo ? `<button type="button" class="tp-btn tp-btn-ghost tp-btn-sm" data-meter-photo="${r.id}">${t('meter.viewPhoto')}</button>` : ''}
+      ${r.bill ? `<button type="button" class="tp-link" data-view-bill="${r.bill.id}">${t('meter.viewBill')}</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function pendingRejectedRowHtml(r){
+  const label = r.status === 'rejected' ? t('meter.rejected') : t('meter.checking');
+  const cls = r.status === 'rejected' ? 'unpaid' : 'part';
+  return `
+  <div class="tp-row">
+    <div>
+      <div class="tp-row-title">${dateFmt(r.reading_date)}</div>
+      <div class="tp-row-sub">${t('meter.youSent')} ${Number(r.customer_reading).toLocaleString('en-IN')}</div>
+      ${r.status === 'rejected' && r.rejection_reason
+        ? `<div class="tp-row-warn">${escapeHtml(r.rejection_reason)}</div>` : ''}
+    </div>
+    <div class="tp-row-right">
+      <span class="tp-state tp-state-${cls}">${label}</span>
+      ${r.bill ? `<div class="tp-row-amount">${currency(r.bill.amount)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+/* Backend has no explicit billing-period field, so it's derived: days
+   between this approved reading and the previous approved reading for
+   the same meter. First-ever reading for a meter has no prior point. */
+function billingPeriodLabel(r){
+  const meterApproved = tp.readings
+    .filter(x => x.meter_id === r.meter_id && x.status === 'approved')
+    .sort((a, b) => new Date(b.reading_date) - new Date(a.reading_date));
+  const idx = meterApproved.findIndex(x => x.id === r.id);
+  const prev = meterApproved[idx + 1];
+  if (!prev) return '—';
+  const days = Math.round((new Date(r.reading_date) - new Date(prev.reading_date)) / 86400000);
+  if (days <= 0) return '—';
+  return `${days} ${days === 1 ? t('meter.day') : t('meter.days')}`;
 }
 
 /* ================================================================
@@ -224,6 +256,9 @@ function attachMeterHandlers(){
 
   document.querySelectorAll('[data-meter-photo]').forEach(btn =>
     btn.addEventListener('click', () => openMeterPhotoModal(Number(btn.dataset.meterPhoto))));
+
+  document.querySelectorAll('[data-view-bill]').forEach(btn =>
+    btn.addEventListener('click', () => openBillSheet(Number(btn.dataset.viewBill))));
 
   document.querySelectorAll('.tp-meter-photo-frame').forEach(frame => {
     const readingId = frame.id.replace('tmPhotoFrame-', '');
