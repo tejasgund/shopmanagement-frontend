@@ -113,11 +113,12 @@ const viewMeta = {
   dashboard: { title:'Dashboard', crumb:'Overview of your portfolio', action:null },
   complexes: { title:'Complexes', crumb:'Buildings and properties you manage', action:'Add complex' },
   shops:     { title:'Shops', crumb:'Units across all complexes', action:'Add shop' },
-  submeters: { title:'Submeters', crumb:'Electricity submeters — add, assign to a shop, and see each meter\'s full history', action:null },
+  submeters: { title:'Add Submeter', crumb:'Electricity submeters — add, assign to a shop, and see each meter\'s full history', action:null },
   users:     { title:'Users', crumb:'Admins and tenants', action:'Add user' },
   billing:   { title:'Finance', crumb:'Add, manage, and browse every bill and payment — tenant-wise, property-wise, or by dues overview', action:null },
   deposits:  { title:'Deposit Payments', crumb:'Security deposit collection tracking', action:'Record deposit' },
   meters:    { title:'Meter Readings', crumb:'Check the photo, enter what you read, approve — the bill is raised for you', action:null },
+  collectSubmeter: { title:'Collect Submeter', crumb:'Enter a reading and photo yourself, on behalf of a tenant who can\'t send one', action:null },
   reports:   { title:'Reports', crumb:'Occupancy, collections and outstanding dues', action:null },
   audit: { title:'Audit Log', crumb:'Every create, update, and delete action across the system', action:null },
   settings:  { title:'Settings', crumb:'Rename the app, change wording, photo limits and billing behaviour', action:null },
@@ -174,6 +175,7 @@ async function renderView(view){
       case 'billing': content.innerHTML = await billingView(); attachBillingHandlers(); break;
       case 'deposits': content.innerHTML = await depositsView(); attachDepositHandlers(); break;
       case 'meters': content.innerHTML = await metersView(); attachMeterHandlers(); break;
+      case 'collectSubmeter': content.innerHTML = await collectSubmeterView(); attachCollectSubmeterHandlers(); break;
       case 'reports': content.innerHTML = await reportsView(); attachReportsHandlers(); break;
       case 'audit': content.innerHTML = await auditView(); attachAuditHandlers(); break;
       case 'settings': content.innerHTML = await settingsView(); attachSettingsHandlers(); break;

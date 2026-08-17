@@ -158,6 +158,9 @@ const STRINGS = {
   'meter.noMeterTitle':{ mr: 'तुमच्या दुकानाला मीटर नाही', en: 'No meter for your shop' },
   'meter.noMeterSub': { mr: 'तुमच्याकडे वीज मीटर असल्यास ऑफिसला सांगा.',
                         en: 'If you have an electricity submeter, ask the office to add it.' },
+  'meter.currentPhoto':{ mr: 'सध्याचा फोटो',    en: 'Current reading' },
+  'meter.oldPhoto':   { mr: 'मागील फोटो',      en: 'Previous reading' },
+  'meter.photoTitle': { mr: 'मीटर फोटो',       en: 'Meter photo' },
 
   /* ---- send reading form ---- */
   'form.lastWas':     { mr: 'तुमचे शेवटचे मंजूर रीडिंग होते',  en: 'Your last confirmed reading was' },

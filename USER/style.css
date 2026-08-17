@@ -337,6 +337,20 @@ input,textarea,select{ font-family:inherit; font-size:16px; }  /* 16px stops iOS
 }
 .tp-meter-waiting strong{ display:block; margin-bottom:3px; font-size:15px; }
 
+.tp-meter-photos{ display:flex; gap:10px; margin-bottom:14px; }
+.tp-meter-photo{
+  flex:1; display:flex; flex-direction:column; gap:6px;
+  background:transparent; border:none; padding:0; text-align:left; cursor:pointer;
+}
+.tp-meter-photo-frame{
+  width:100%; aspect-ratio:4/3; border-radius:var(--radius-sm);
+  border:1px solid var(--line); background:var(--paper);
+  display:flex; align-items:center; justify-content:center; overflow:hidden;
+}
+.tp-meter-photo-frame img{ width:100%; height:100%; object-fit:cover; }
+.tp-meter-photo-error{ color:var(--danger); font-weight:700; font-size:16px; }
+.tp-meter-photo-label{ font-size:11.5px; color:var(--muted); }
+
 /* ============================================================
    BUTTONS
    ============================================================ */
@@ -362,6 +376,9 @@ input,textarea,select{ font-family:inherit; font-size:16px; }  /* 16px stops iOS
   width:15px; height:15px; border-radius:50%;
   border:2.5px solid rgba(255,255,255,.35); border-top-color:#fff;
   display:inline-block; animation:tp-spin .7s linear infinite;
+}
+.tp-spinner-dark{
+  border-color:var(--line); border-top-color:var(--green);
 }
 
 /* ============================================================

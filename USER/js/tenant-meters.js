@@ -32,7 +32,20 @@ function renderMeterScreen(){
   `;
 }
 
+/* Newest-first readings for this meter, used to tell "current" from "old". */
+function meterReadingsSorted(meterId){
+  return tp.readings
+    .filter(r => r.meter_id === meterId)
+    .sort((a, b) => new Date(b.reading_date) - new Date(a.reading_date));
+}
+
 function meterCardHtml(m){
+  const [current, old] = meterReadingsSorted(m.id);
+  const photoSlots = [
+    current && current.has_photo ? { slot: 'current', reading: current, label: t('meter.currentPhoto') } : null,
+    old && old.has_photo ? { slot: 'old', reading: old, label: t('meter.oldPhoto') } : null,
+  ].filter(Boolean);
+
   return `
   <div class="tp-meter-card">
     <div class="tp-meter-head">
@@ -46,6 +59,17 @@ function meterCardHtml(m){
       <span>${t('meter.lastConfirmed')}</span>
       <strong>${Number(m.previous_reading).toLocaleString('en-IN')}</strong>
     </div>
+
+    ${photoSlots.length ? `
+    <div class="tp-meter-photos">
+      ${photoSlots.map(p => `
+        <button type="button" class="tp-meter-photo" data-meter-photo="${p.reading.id}" data-meter-photo-slot="${p.slot}">
+          <div class="tp-meter-photo-frame" id="tmPhotoFrame-${p.reading.id}">
+            <span class="tp-spinner tp-spinner-dark"></span>
+          </div>
+          <span class="tp-meter-photo-label">${p.label} · ${dateFmt(p.reading.reading_date)}</span>
+        </button>`).join('')}
+    </div>` : ''}
 
     ${m.has_pending ? `
       <div class="tp-meter-waiting">
@@ -197,4 +221,52 @@ function openSendReadingModal(meterId){
 function attachMeterHandlers(){
   document.querySelectorAll('[data-send-reading]').forEach(btn =>
     btn.addEventListener('click', () => openSendReadingModal(Number(btn.dataset.sendReading))));
+
+  document.querySelectorAll('[data-meter-photo]').forEach(btn =>
+    btn.addEventListener('click', () => openMeterPhotoModal(Number(btn.dataset.meterPhoto))));
+
+  document.querySelectorAll('.tp-meter-photo-frame').forEach(frame => {
+    const readingId = frame.id.replace('tmPhotoFrame-', '');
+    loadMeterThumb(Number(readingId), frame);
+  });
+}
+
+/* ================================================================
+   OLD / CURRENT READING PHOTOS
+   Thumbnails load as authenticated blobs (same pattern the admin
+   portal uses) since the photo endpoint needs the auth header and
+   can't be used as a plain <img src>.
+   ================================================================ */
+const _meterPhotoUrlCache = {};
+
+async function fetchMeterPhotoUrl(readingId){
+  if (_meterPhotoUrlCache[readingId]) return _meterPhotoUrlCache[readingId];
+  const res = await fetch(`${API_BASE_URL}/api/meter-readings/${readingId}/photo`, {
+    headers: { 'Authorization': `Bearer ${state.token}` },
+  });
+  if (!res.ok) throw new Error('Photo could not be loaded');
+  const url = URL.createObjectURL(await res.blob());
+  _meterPhotoUrlCache[readingId] = url;
+  return url;
+}
+
+async function loadMeterThumb(readingId, frameEl){
+  try {
+    const url = await fetchMeterPhotoUrl(readingId);
+    frameEl.innerHTML = `<img src="${url}" alt="${t('meter.photoTitle')}">`;
+  } catch (err) {
+    frameEl.innerHTML = `<span class="tp-meter-photo-error">!</span>`;
+  }
+}
+
+async function openMeterPhotoModal(readingId){
+  openModal(t('meter.photoTitle'), `<div style="text-align:center; padding:30px 0;"><span class="tp-spinner tp-spinner-dark"></span></div>`,
+    `<button class="tp-btn tp-btn-ghost" id="tmpCloseBtn">${t('common.cancel')}</button>`);
+  document.getElementById('tmpCloseBtn').addEventListener('click', closeModal);
+  try {
+    const url = await fetchMeterPhotoUrl(readingId);
+    document.getElementById('modalBody').innerHTML = `<div class="tp-preview" style="display:block;"><img src="${url}" alt="${t('meter.photoTitle')}" style="width:100%; border-radius:var(--radius-sm);"></div>`;
+  } catch (err) {
+    document.getElementById('modalBody').innerHTML = `<div class="tp-field-error" style="display:block;">${escapeHtml(err.message)}</div>`;
+  }
 }

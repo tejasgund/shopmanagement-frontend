@@ -59,9 +59,26 @@
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9M4 9h16M9 21v-5a1 1 0 011-1h4a1 1 0 011 1v5"/></svg>
             <span class="nav-item-label">Shops</span>
           </button>
-          <button class="nav-item" data-view="submeters" data-tooltip="Submeters" title="Submeters">
+        </div>
+      </div>
+      <div class="nav-group" data-group="submeter">
+        <button type="button" class="nav-label" data-group-toggle="submeter">
+          <span>Submeter</span>
+          <svg class="nav-label-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="nav-group-body">
+          <button class="nav-item" data-view="submeters" data-tooltip="Add Submeter" title="Add Submeter">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h5"/><circle cx="17" cy="14" r="1.5"/></svg>
-            <span class="nav-item-label">Submeters</span>
+            <span class="nav-item-label">Add Submeter</span>
+          </button>
+          <button class="nav-item" data-view="meters" data-tooltip="Meter Readings" title="Meter Readings">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-3"/><path d="M12 7v1M17 12h-1M12 17v-1M7 12h1"/></svg>
+            <span class="nav-item-label">Meter Readings</span>
+            <span class="nav-badge" id="meterBadge" style="display:none;">0</span>
+          </button>
+          <button class="nav-item" data-view="collectSubmeter" data-tooltip="Collect Submeter" title="Collect Submeter">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span class="nav-item-label">Collect Submeter</span>
           </button>
         </div>
       </div>
@@ -91,11 +108,6 @@
           <button class="nav-item" data-view="deposits" data-tooltip="Deposits" title="Deposits">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
             <span class="nav-item-label">Deposits</span>
-          </button>
-          <button class="nav-item" data-view="meters" data-tooltip="Meter Readings" title="Meter Readings">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-3"/><path d="M12 7v1M17 12h-1M12 17v-1M7 12h1"/></svg>
-            <span class="nav-item-label">Meter Readings</span>
-            <span class="nav-badge" id="meterBadge" style="display:none;">0</span>
           </button>
         </div>
       </div>
@@ -196,6 +208,7 @@
 <script src="js/deposits.js"></script>
 <script src="js/meters.js"></script>
 <script src="js/submeters.js"></script>
+<script src="js/collect-submeter.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/reports.js"></script>
 <script src="js/modals.js"></script>
