@@ -234,7 +234,9 @@ console.log('\n=== METER ===');
 const meter = strip(sandbox.renderMeterScreen());
 check('shows the last confirmed reading', meter.includes('12,730'));
 check('offers to send this month\'s reading', /Send this month/.test(meter));
-check('shows units used on past readings', /280 units used/.test(meter));
+// Approved readings render as a label/value card now ("units used" / "280"),
+// not the old combined "280 units used" phrase from the plain-row layout.
+check('shows units used on past readings', /units used\s*280/i.test(meter));
 check('shows why one was rejected', /too blurry/i.test(meter));
 
 sandbox.openSendReadingModal(7);
