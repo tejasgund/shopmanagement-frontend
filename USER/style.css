@@ -382,6 +382,8 @@ input,textarea,select{ font-family:inherit; font-size:16px; }  /* 16px stops iOS
 .tp-btn-primary:active{ background:var(--green-deep); }
 .tp-btn-primary:disabled{ background:#9FB8AB; }
 .tp-btn-ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--line); }
+.tp-btn-white{ background:#fff; color:var(--ink); }
+.tp-btn-white:active{ background:#eee; }
 .tp-btn-light{ background:rgba(255,255,255,.16); color:#fff; }
 .tp-btn-danger{ background:transparent; color:var(--danger); border:1.5px solid var(--danger-soft); }
 

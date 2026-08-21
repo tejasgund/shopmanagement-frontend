@@ -136,6 +136,10 @@ const STRINGS = {
   'pay.failed':            { mr: 'पैसे भरले गेले नाहीत',       en: 'Payment did not go through' },
   'pay.gatewayUnavailable':{ mr: 'ऑनलाइन पेमेंट सध्या उपलब्ध नाही. इंटरनेट तपासा किंवा नंतर प्रयत्न करा.',
                              en: 'Online payment is unavailable right now. Check your internet or try again shortly.' },
+  'pay.payBill':           { mr: 'बिल भरा',                    en: 'Pay bill' },
+  'pay.totalDescription':  { mr: 'एकूण बाकी रक्कम',             en: 'Total pending balance' },
+  'pay.multiHint':         { mr: 'तुमची एकापेक्षा जास्त बिले असतील, तर ही रक्कम आधी सर्वात जुन्या बिलाला लावली जाईल, आपोआप.',
+                             en: "If you have more than one bill, this is applied to the oldest one first, automatically." },
 
   /* ---- payments ---- */
   'pay.youPaidIn':   { mr: 'या वर्षी भरले',    en: 'You paid in' },

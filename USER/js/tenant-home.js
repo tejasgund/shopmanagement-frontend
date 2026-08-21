@@ -65,8 +65,65 @@ function homeAmountCardHtml(due, unpaid, overdue, next){
       <div class="tp-amount-label">${t('home.youOwe')}</div>
       <div class="tp-amount-value">${currency(due)}</div>
       ${whenLine}
+      ${(tp.publicSettings && tp.publicSettings.razorpay_enabled) ? `
+      <button class="tp-btn tp-btn-white tp-btn-block" id="tpHomePayCta">${t('pay.payBill')}</button>` : ''}
       <button class="tp-btn tp-btn-light tp-btn-block" data-go-tab="bills">${t('home.seeWhat')}</button>
     </div>`;
+}
+
+/* ---- Pay bill (Razorpay) — the tenant's whole pending balance in one go.
+   Full or partial; the backend FIFO-allocates whatever is paid across
+   every bill owed, oldest due date first, entirely automatically. ---- */
+function openPayTotalModal(){
+  const due = tpTotalDue();
+  if (due <= 0) return;
+  const maxPay = due.toFixed(2);
+
+  openModal(t('pay.payBill'), `
+    <div class="tp-sheet">
+      <div class="tp-sheet-hero">
+        <div class="tp-sheet-hero-label">${t('home.youOwe')}</div>
+        <div class="tp-sheet-hero-value">${currency(due)}</div>
+      </div>
+
+      <div class="tp-pay-online">
+        <label class="tp-field-label" for="tpHomePayAmount">${t('pay.amountLabel')}</label>
+        <div class="tp-pay-row">
+          <input type="number" id="tpHomePayAmount" class="tp-text-input" inputmode="decimal"
+                 step="0.01" min="1" max="${maxPay}" value="${maxPay}">
+          <button type="button" class="tp-btn tp-btn-primary" id="tpHomePayBtn">${t('pay.payOnline')}</button>
+        </div>
+        <div class="tp-field-error" id="tpHomePayErr" style="display:none;"></div>
+        <div class="tp-field-hint">${t('pay.multiHint')}</div>
+      </div>
+    </div>
+  `, `<button class="tp-btn tp-btn-ghost tp-btn-block" id="tpHomePayClose">${t('common.close')}</button>`);
+
+  document.getElementById('tpHomePayClose').addEventListener('click', closeModal);
+  document.getElementById('tpHomePayBtn').addEventListener('click', () => {
+    const input = document.getElementById('tpHomePayAmount');
+    const amount = parseFloat(input.value);
+    const currentDue = tpTotalDue();   // re-check freshness at the moment of the click
+
+    document.getElementById('tpHomePayErr').style.display = 'none';
+    if (isNaN(amount) || amount <= 0){
+      showFieldError('tpHomePayErr', t('pay.invalidAmount'));
+      return;
+    }
+    if (amount > currentDue + 0.004){
+      showFieldError('tpHomePayErr', t('pay.exceedsPending'));
+      return;
+    }
+
+    tpStartRazorpayPayment({
+      billId: null,
+      amount,
+      description: t('pay.totalDescription'),
+      btnEl: document.getElementById('tpHomePayBtn'),
+      errElId: 'tpHomePayErr',
+      onDone: closeModal,
+    });
+  });
 }
 
 /* ================================================================
@@ -266,4 +323,5 @@ function attachHomeHandlers(){
   // The big "add reading" button lives on Home as well as the Meter tab.
   document.querySelectorAll('[data-send-reading]').forEach(btn =>
     btn.addEventListener('click', () => openSendReadingModal(Number(btn.dataset.sendReading))));
+  document.getElementById('tpHomePayCta')?.addEventListener('click', openPayTotalModal);
 }

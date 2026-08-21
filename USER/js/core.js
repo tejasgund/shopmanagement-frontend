@@ -162,3 +162,108 @@ function logout(){
   localStorage.removeItem('tms_role');
   window.location.href = '../index.html';
 }
+
+/* ================================================================
+   PAY ONLINE (Razorpay Standard Checkout)
+
+   Shared by the bill detail sheet (one bill) and the Home screen's
+   "Pay bill" button (the tenant's whole pending balance) - one
+   implementation, so the two entry points can't quietly drift apart.
+
+   opts:
+     billId      - a specific bill's id, or null to pay across every bill
+                   the tenant owes on (the backend FIFO-allocates it,
+                   oldest due date first, same order the office's own
+                   lump-sum tool uses)
+     amount      - rupees, already validated by the caller against
+                   whatever THAT screen's cap is (one bill's pending
+                   amount, or the whole total due)
+     description - shown inside the Razorpay modal
+     btnEl       - the button to disable/spin/reset
+     errElId     - id of the field-error element to show problems in
+     onDone      - called after a successful, verified payment (e.g.
+                   closeModal for the bill sheet; nothing needed on Home,
+                   since refreshTenantPortal() already re-renders it)
+   ================================================================ */
+function tpStartRazorpayPayment({ billId, amount, description, btnEl, errElId, onDone }){
+  if (typeof Razorpay === 'undefined'){
+    showFieldError(errElId, t('pay.gatewayUnavailable'));
+    return;
+  }
+
+  const originalLabel = btnEl.innerHTML;
+  const resetButton = () => { btnEl.disabled = false; btnEl.innerHTML = originalLabel; };
+
+  btnEl.disabled = true;
+  btnEl.innerHTML = `<span class="tp-spinner"></span> ${t('pay.starting')}`;
+
+  (async () => {
+    let order;
+    try {
+      // The server decides and locks in the real amount here (capped at
+      // whatever's actually pending) - this request value is a request,
+      // never a promise the backend has to honour as-is.
+      const body = { amount };
+      if (billId != null) body.bill_id = billId;
+      order = await api('/api/tenant/payments/razorpay/create-order', { method: 'POST', body });
+    } catch (err) {
+      showFieldError(errElId, err.message);
+      resetButton();
+      return;
+    }
+
+    btnEl.innerHTML = `<span class="tp-spinner"></span> ${t('pay.completeInWindow')}`;
+
+    const options = {
+      key: order.key_id,
+      amount: order.amount,
+      currency: order.currency,
+      order_id: order.order_id,
+      name: (tp.publicSettings && tp.publicSettings.app_name) || 'Payment',
+      description: description || t('pay.payOnline'),
+      prefill: {
+        name:    tp.profile?.name   || '',
+        email:   tp.profile?.email  || '',
+        contact: tp.profile?.mobile || '',
+      },
+      theme: { color: '#2F6F4F' },
+      handler: async function(response){
+        btnEl.innerHTML = `<span class="tp-spinner"></span> ${t('pay.verifying')}`;
+        try {
+          await api('/api/tenant/payments/razorpay/verify', {
+            method: 'POST',
+            body: {
+              razorpay_order_id:   response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature:  response.razorpay_signature,
+            },
+          });
+          showToast(t('pay.success'), 'success');
+          await refreshTenantPortal(false);
+          if (onDone) onDone();
+        } catch (err) {
+          // Signature mismatch or a server-side hiccup - nothing was marked
+          // paid. If money actually left their account, the office can
+          // match it later using the Razorpay payment ID Razorpay itself
+          // confirmed.
+          resetButton();
+          showFieldError(errElId, err.message || t('pay.verifyFailed'));
+        }
+      },
+      modal: {
+        ondismiss: function(){
+          // User closed the Razorpay window without paying - not an error,
+          // just let them try again.
+          resetButton();
+        },
+      },
+    };
+
+    const rzp = new Razorpay(options);
+    rzp.on('payment.failed', function(response){
+      resetButton();
+      showFieldError(errElId, (response && response.error && response.error.description) || t('pay.failed'));
+    });
+    rzp.open();
+  })();
+}

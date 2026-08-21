@@ -204,22 +204,21 @@ function payOnlineSectionHtml(b, pending){
   </div>`;
 }
 
-async function startRazorpayPayment(billId){
+/* The actual Razorpay checkout flow (create-order -> modal -> verify) lives
+   in core.js as tpStartRazorpayPayment() so this file and tenant-home.js
+   (the "pay everything at once" button) share one implementation instead
+   of two copies that could drift apart. This is just the bill-sheet-shaped
+   wrapper: read the amount input, validate against THIS bill's pending
+   balance, then hand off. */
+function startRazorpayPayment(billId){
   const b = tp.bills.find(x => x.id === billId);
   if (!b) return;
 
-  if (typeof Razorpay === 'undefined'){
-    showFieldError('tpPayErr', t('pay.gatewayUnavailable'));
-    return;
-  }
-
-  const input = document.getElementById('tpPayAmount');
-  const btn = document.getElementById('tpPayBtn');
-  document.getElementById('tpPayErr').style.display = 'none';
-
   const pending = Number(b.pending_amount || 0);
+  const input = document.getElementById('tpPayAmount');
   const amount = parseFloat(input.value);
 
+  document.getElementById('tpPayErr').style.display = 'none';
   if (isNaN(amount) || amount <= 0){
     showFieldError('tpPayErr', t('pay.invalidAmount'));
     return;
@@ -229,79 +228,14 @@ async function startRazorpayPayment(billId){
     return;
   }
 
-  const originalLabel = btn.innerHTML;
-  const resetButton = () => { btn.disabled = false; btn.innerHTML = originalLabel; };
-
-  btn.disabled = true;
-  btn.innerHTML = `<span class="tp-spinner"></span> ${t('pay.starting')}`;
-
-  let order;
-  try {
-    // The server decides and locks in the real amount here (capped at the
-    // bill's actual pending balance) - this request value is a request,
-    // not a promise.
-    order = await api('/api/tenant/payments/razorpay/create-order', {
-      method: 'POST',
-      body: { bill_id: billId, amount },
-    });
-  } catch (err) {
-    showFieldError('tpPayErr', err.message);
-    resetButton();
-    return;
-  }
-
-  btn.innerHTML = `<span class="tp-spinner"></span> ${t('pay.completeInWindow')}`;
-
-  const options = {
-    key: order.key_id,
-    amount: order.amount,
-    currency: order.currency,
-    order_id: order.order_id,
-    name: (tp.publicSettings && tp.publicSettings.app_name) || 'Payment',
+  tpStartRazorpayPayment({
+    billId: b.id,
+    amount,
     description: `${billTypeLabel(b.bill_type)} — ${t('bill.number')} #${b.id}`,
-    prefill: {
-      name:    tp.profile?.name   || '',
-      email:   tp.profile?.email  || '',
-      contact: tp.profile?.mobile || '',
-    },
-    theme: { color: '#2F6F4F' },
-    handler: async function(response){
-      btn.innerHTML = `<span class="tp-spinner"></span> ${t('pay.verifying')}`;
-      try {
-        await api('/api/tenant/payments/razorpay/verify', {
-          method: 'POST',
-          body: {
-            razorpay_order_id:   response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature:  response.razorpay_signature,
-          },
-        });
-        closeModal();
-        showToast(t('pay.success'), 'success');
-        await refreshTenantPortal(false);
-      } catch (err) {
-        // Signature mismatch or a server-side hiccup - nothing was marked
-        // paid. If money actually left their account, the office can match
-        // it later using the Razorpay payment ID Razorpay itself confirmed.
-        resetButton();
-        showFieldError('tpPayErr', err.message || t('pay.verifyFailed'));
-      }
-    },
-    modal: {
-      ondismiss: function(){
-        // User closed the Razorpay window without paying - not an error,
-        // just let them try again.
-        resetButton();
-      },
-    },
-  };
-
-  const rzp = new Razorpay(options);
-  rzp.on('payment.failed', function(response){
-    resetButton();
-    showFieldError('tpPayErr', (response && response.error && response.error.description) || t('pay.failed'));
+    btnEl: document.getElementById('tpPayBtn'),
+    errElId: 'tpPayErr',
+    onDone: closeModal,
   });
-  rzp.open();
 }
 
 function attachBillsHandlers(){
