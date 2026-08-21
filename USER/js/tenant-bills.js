@@ -152,6 +152,8 @@ function openBillSheet(billId){
         <div class="tp-sheet-hero-value">${currency(pending > 0.004 ? pending : Number(b.amount || 0))}</div>
       </div>
 
+      ${pending > 0.004 ? payOnlineSectionHtml(b, pending) : ''}
+
       ${progressBarHtml(paid, Number(b.amount || 0))}
 
       <div class="tp-kv"><span>${t('bill.amount')}</span><strong>${currency(b.amount)}</strong></div>
@@ -174,6 +176,132 @@ function openBillSheet(billId){
   `, `<button class="tp-btn tp-btn-primary tp-btn-block" id="tpSheetClose">${t('common.close')}</button>`);
 
   document.getElementById('tpSheetClose').addEventListener('click', closeModal);
+  document.getElementById('tpPayBtn')?.addEventListener('click', () => startRazorpayPayment(b.id));
+}
+
+/* ================================================================
+   PAY ONLINE (Razorpay Standard Checkout)
+
+   Amount is editable (partial payments allowed, same as the office
+   accepts) but always capped client-side at the pending balance - the
+   server caps it again independently, so this is a UX nicety, not the
+   real guard.
+   ================================================================ */
+function payOnlineSectionHtml(b, pending){
+  if (!(tp.publicSettings && tp.publicSettings.razorpay_enabled)) return '';
+  const maxPay = pending.toFixed(2);
+  return `
+  <div class="tp-pay-online">
+    <label class="tp-field-label" for="tpPayAmount">${t('pay.amountLabel')}</label>
+    <div class="tp-pay-row">
+      <input type="number" id="tpPayAmount" class="tp-text-input" inputmode="decimal"
+             step="0.01" min="1" max="${maxPay}" value="${maxPay}">
+      <button type="button" class="tp-btn tp-btn-primary" id="tpPayBtn" data-pay-bill="${b.id}">
+        ${t('pay.payOnline')}
+      </button>
+    </div>
+    <div class="tp-field-error" id="tpPayErr" style="display:none;"></div>
+  </div>`;
+}
+
+async function startRazorpayPayment(billId){
+  const b = tp.bills.find(x => x.id === billId);
+  if (!b) return;
+
+  if (typeof Razorpay === 'undefined'){
+    showFieldError('tpPayErr', t('pay.gatewayUnavailable'));
+    return;
+  }
+
+  const input = document.getElementById('tpPayAmount');
+  const btn = document.getElementById('tpPayBtn');
+  document.getElementById('tpPayErr').style.display = 'none';
+
+  const pending = Number(b.pending_amount || 0);
+  const amount = parseFloat(input.value);
+
+  if (isNaN(amount) || amount <= 0){
+    showFieldError('tpPayErr', t('pay.invalidAmount'));
+    return;
+  }
+  if (amount > pending + 0.004){
+    showFieldError('tpPayErr', t('pay.exceedsPending'));
+    return;
+  }
+
+  const originalLabel = btn.innerHTML;
+  const resetButton = () => { btn.disabled = false; btn.innerHTML = originalLabel; };
+
+  btn.disabled = true;
+  btn.innerHTML = `<span class="tp-spinner"></span> ${t('pay.starting')}`;
+
+  let order;
+  try {
+    // The server decides and locks in the real amount here (capped at the
+    // bill's actual pending balance) - this request value is a request,
+    // not a promise.
+    order = await api('/api/tenant/payments/razorpay/create-order', {
+      method: 'POST',
+      body: { bill_id: billId, amount },
+    });
+  } catch (err) {
+    showFieldError('tpPayErr', err.message);
+    resetButton();
+    return;
+  }
+
+  btn.innerHTML = `<span class="tp-spinner"></span> ${t('pay.completeInWindow')}`;
+
+  const options = {
+    key: order.key_id,
+    amount: order.amount,
+    currency: order.currency,
+    order_id: order.order_id,
+    name: (tp.publicSettings && tp.publicSettings.app_name) || 'Payment',
+    description: `${billTypeLabel(b.bill_type)} — ${t('bill.number')} #${b.id}`,
+    prefill: {
+      name:    tp.profile?.name   || '',
+      email:   tp.profile?.email  || '',
+      contact: tp.profile?.mobile || '',
+    },
+    theme: { color: '#2F6F4F' },
+    handler: async function(response){
+      btn.innerHTML = `<span class="tp-spinner"></span> ${t('pay.verifying')}`;
+      try {
+        await api('/api/tenant/payments/razorpay/verify', {
+          method: 'POST',
+          body: {
+            razorpay_order_id:   response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature:  response.razorpay_signature,
+          },
+        });
+        closeModal();
+        showToast(t('pay.success'), 'success');
+        await refreshTenantPortal(false);
+      } catch (err) {
+        // Signature mismatch or a server-side hiccup - nothing was marked
+        // paid. If money actually left their account, the office can match
+        // it later using the Razorpay payment ID Razorpay itself confirmed.
+        resetButton();
+        showFieldError('tpPayErr', err.message || t('pay.verifyFailed'));
+      }
+    },
+    modal: {
+      ondismiss: function(){
+        // User closed the Razorpay window without paying - not an error,
+        // just let them try again.
+        resetButton();
+      },
+    },
+  };
+
+  const rzp = new Razorpay(options);
+  rzp.on('payment.failed', function(response){
+    resetButton();
+    showFieldError('tpPayErr', (response && response.error && response.error.description) || t('pay.failed'));
+  });
+  rzp.open();
 }
 
 function attachBillsHandlers(){

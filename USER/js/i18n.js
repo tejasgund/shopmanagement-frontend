@@ -121,6 +121,22 @@ const STRINGS = {
   'bill.lumpHint':   { mr: 'एका वेळी दिलेले पैसे अनेक बिलांना लावले असतील, तर पूर्ण रक्कम "भरलेले पैसे" मध्ये दिसेल.',
                        en: 'If you paid one amount that covered several bills, you\'ll see the full amount under the "I paid" tab.' },
 
+  /* ---- pay online (Razorpay) ---- */
+  'pay.amountLabel':      { mr: 'किती भरायचे आहे',           en: 'Amount to pay' },
+  'pay.payOnline':         { mr: 'ऑनलाइन भरा',               en: 'Pay online' },
+  'pay.invalidAmount':     { mr: 'बरोबर रक्कम टाका',          en: 'Enter a valid amount' },
+  'pay.exceedsPending':    { mr: 'ही रक्कम बाकी असलेल्या रकमेपेक्षा जास्त आहे',
+                             en: "That's more than what's left to pay" },
+  'pay.starting':          { mr: 'सुरू करत आहे…',             en: 'Starting…' },
+  'pay.completeInWindow':  { mr: 'उघडलेल्या विंडोमध्ये पैसे भरा', en: 'Complete payment in the window that opened' },
+  'pay.verifying':         { mr: 'तपासत आहे…',                en: 'Verifying…' },
+  'pay.success':           { mr: 'पैसे भरले गेले ✓',           en: 'Payment successful ✓' },
+  'pay.verifyFailed':      { mr: 'पैसे तपासता आले नाहीत. ऑफिसला संपर्क करा.',
+                             en: 'Could not verify the payment. Please contact the office.' },
+  'pay.failed':            { mr: 'पैसे भरले गेले नाहीत',       en: 'Payment did not go through' },
+  'pay.gatewayUnavailable':{ mr: 'ऑनलाइन पेमेंट सध्या उपलब्ध नाही. इंटरनेट तपासा किंवा नंतर प्रयत्न करा.',
+                             en: 'Online payment is unavailable right now. Check your internet or try again shortly.' },
+
   /* ---- payments ---- */
   'pay.youPaidIn':   { mr: 'या वर्षी भरले',    en: 'You paid in' },
   'pay.youPaid':     { mr: 'तुम्ही भरले',      en: 'You paid' },
