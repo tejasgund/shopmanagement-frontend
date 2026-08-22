@@ -144,7 +144,50 @@ function settingFieldHtml(s){
   </div>`;
 }
 
+/* ================================================================
+   "This window is currently doing nothing" warning.
+
+   "Allow every day" overrides the From/To days entirely. An admin who
+   narrows the window while that switch is on gets a setting that silently
+   has no effect - which is exactly how a configured 1-10 window went
+   unenforced. The switch now defaults off, but it can still be turned on,
+   so say plainly when the days below it are inert instead of leaving the
+   admin to work it out from behaviour.
+   ================================================================ */
+function refreshUploadWindowWarning(){
+  const anyDay = document.querySelector('[data-setting-key="meter.tenant_upload_any_day"]');
+  const from   = document.querySelector('[data-setting-key="meter.tenant_upload_from_day"]');
+  const to     = document.querySelector('[data-setting-key="meter.tenant_upload_to_day"]');
+  if (!anyDay || !from || !to) return;
+
+  let box = document.getElementById('uploadWindowWarn');
+  if (!box){
+    box = document.createElement('div');
+    box.id = 'uploadWindowWarn';
+    box.className = 'warn-box';
+    box.style.cssText = 'margin-top:8px; grid-column:1/-1;';
+    to.closest('.settings-field').after(box);
+  }
+
+  // Only worth saying when the days actually describe something narrower
+  // than "the whole month" - otherwise the two agree anyway.
+  const narrowed = Number(from.value) > 1 || Number(to.value) < 31;
+  const inert = anyDay.checked && narrowed;
+  box.style.display = inert ? '' : 'none';
+  if (inert){
+    box.innerHTML = `${warnIcon()}<span><strong>The day range below is being ignored.</strong>
+      “Allow tenant reading upload every day” is on, so tenants can submit on any day —
+      days ${escapeHtml(from.value)}–${escapeHtml(to.value)} will have no effect until you turn it off.</span>`;
+  }
+}
+
 function attachSettingsHandlers(){
+  refreshUploadWindowWarning();
+  ['meter.tenant_upload_any_day', 'meter.tenant_upload_from_day', 'meter.tenant_upload_to_day']
+    .forEach(key => document
+      .querySelector(`[data-setting-key="${key}"]`)
+      ?.addEventListener('change', refreshUploadWindowWarning));
+
   document.getElementById('saveSettingsBtn')?.addEventListener('click', async () => {
     const values = {};
     document.querySelectorAll('[data-setting-key]').forEach(el => {

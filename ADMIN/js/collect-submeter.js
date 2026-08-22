@@ -112,20 +112,12 @@ async function openCollectReadingModal(meterId){
     photoAllowed = await getSettingBool('meter.allow_admin_photo_upload');
   } catch (err) { /* keep the existing field */ }
 
-  /* "Allow gallery upload" (Settings -> Meter readings). Off keeps
-     capture="environment" on the input, which is what makes a phone open the
-     camera instead of the photo picker; on simply omits it, so the picker
-     offers the device's existing photos AND the camera. Nothing else about
-     the upload changes. Defaults to off (camera only) if the setting can't be
-     read, matching the behaviour that shipped before it existed. */
-  let galleryAllowed = false;
-  try {
-    // Explicit false fallback, NOT getSettingBool() - that defaults a missing
-    // key to true, which is right for the "may this role upload at all"
-    // switches but would silently switch the gallery ON against an older
-    // backend that has never heard of this setting.
-    galleryAllowed = Boolean(await getSetting('meter.allow_gallery_upload', false));
-  } catch (err) { /* stay camera-only */ }
+  /* NOTE: "Allow gallery upload" governs TENANTS only and is deliberately not
+     read here. An admin collecting a reading always gets both options - the
+     camera and the device's existing photos - so this input never carries
+     capture="environment", which is the attribute that would restrict a phone
+     to the camera. Do not gate this on that setting: an admin standing at a
+     meter with a photo already taken must still be able to file it. */
 
   openModal(`Collect reading — ${escapeHtml(meter.meter_number)}`, `
     <form id="collectForm">
@@ -144,10 +136,8 @@ async function openCollectReadingModal(meterId){
       ${photoAllowed ? `
       <div class="field">
         <label for="csPhoto">Photo of the meter <span style="font-weight:400; color:var(--muted);">(optional, but recommended)</span></label>
-        <input id="csPhoto" type="file" accept="image/*"${galleryAllowed ? '' : ' capture="environment"'}>
-        <div class="hint" style="margin-top:4px;">${galleryAllowed
-          ? 'Take a photo now, or choose one already on this device.'
-          : 'Opens the camera — the photo must be taken now.'}</div>
+        <input id="csPhoto" type="file" accept="image/*">
+        <div class="hint" style="margin-top:4px;">Take a photo now, or choose one already on this device.</div>
         <div id="csPreviewWrap" style="display:none; margin-top:8px;">
           <img id="csPreview" alt="Selected photo" style="max-width:100%; max-height:220px; border-radius:var(--radius-sm); border:1px solid var(--line);">
         </div>
