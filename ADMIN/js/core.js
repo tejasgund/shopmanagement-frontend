@@ -151,6 +151,27 @@ const dateFmt = (iso) => {
   if (isNaN(d)) return iso;
   return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
 };
+
+/* Format a Date for an <input type="date"> using its LOCAL calendar day.
+   Deliberately not toISOString().slice(0,10): that converts to UTC first, so
+   between midnight and 05:30 IST it yields yesterday's date and a box meant
+   to read "today" shows the day before. */
+function toDateInputValue(d){
+  if (!d || isNaN(d)) return '';
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+/* A new Date n days after d, leaving d untouched. setDate() handles
+   month/year rollover, so no manual month arithmetic is needed. */
+function addDays(d, n){
+  const out = new Date(d.getTime());
+  out.setDate(out.getDate() + n);
+  return out;
+}
+
 const initials = (name) => (name || '?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
 
 function daysLeftHtml(endIso){

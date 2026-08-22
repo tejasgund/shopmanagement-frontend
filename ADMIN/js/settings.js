@@ -10,6 +10,34 @@
 
 let _settingsCache = null;
 
+/* Admin-configured "Default bill due period (days)" (Settings -> Billing),
+   cached so opening the bill modal doesn't refetch the whole settings payload
+   every time. Read from /api/settings rather than /api/settings/public - the
+   public endpoint is a deliberately small allow-list for callers who aren't
+   signed in, and this is admin business config. null = not fetched yet;
+   cleared by invalidateSettingsCaches() whenever settings are saved or reset
+   so a change takes effect without a page reload. */
+let _billDueDaysCache = null;
+
+/* Throws if the value can't be read. Callers should treat that as "leave the
+   due date blank and let the server apply the setting" rather than
+   substituting a number of their own - a hardcoded default on this side is
+   exactly what made this setting look broken before. */
+async function getBillDueDays(){
+  if (_billDueDaysCache !== null) return _billDueDaysCache;
+  const data = await api('/api/settings');
+  const row  = (data.settings || []).find(s => s.key === 'bill.due_days');
+  const days = Number(row && row.value);
+  if (!Number.isFinite(days)) throw new Error('bill.due_days missing from /api/settings');
+  _billDueDaysCache = days;
+  return _billDueDaysCache;
+}
+
+function invalidateSettingsCaches(){
+  _settingsCache    = null;
+  _billDueDaysCache = null;
+}
+
 async function settingsView(){
   const data = await api('/api/settings');
   _settingsCache = data;
@@ -108,6 +136,7 @@ function attachSettingsHandlers(){
 
     await withSavingState('saveSettingsBtn', async () => {
       const res = await api('/api/settings', { method:'PUT', body:{ values } });
+      invalidateSettingsCaches();  // a new due period must apply to the very next bill
       showToast(res.message, 'success');
       await applyBranding();       // reflect a new app name straight away
       await renderView('settings');
@@ -134,6 +163,7 @@ function attachSettingsHandlers(){
     document.getElementById('confirmResetBtn').addEventListener('click', async () => {
       await withSavingState('confirmResetBtn', async () => {
         await api('/api/settings/reset', { method:'POST' });
+        invalidateSettingsCaches();
         closeModal();
         showToast('All settings reset to defaults', 'success');
         await applyBranding();

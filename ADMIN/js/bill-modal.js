@@ -15,8 +15,26 @@ async function openBillModal(presetUserId){
 
   const tenants = state.cache.users.filter(u => u.role === 'tenant');
   const today = new Date();
-  const due = new Date(); due.setDate(today.getDate()+14);
-  const todayStr = today.toISOString().slice(0,10);
+  const todayStr = toDateInputValue(today);
+
+  /* Due date is prefilled from the admin-configured "Default bill due period
+     (days)" (Settings -> Billing), which is the same rule the server applies
+     to a bill submitted without one: due date = bill date + N days.
+
+     This used to be a flat +14 days regardless of the setting. Because a
+     prefilled box is never empty, that value was always sent as an explicit
+     due_date, so the server never got to apply the configured period - the
+     setting looked like it did nothing no matter what it was changed to.
+
+     If the setting can't be read, the field is left blank on purpose so the
+     server still applies it. An empty box beats a wrong date. */
+  let billDueDays = null;
+  try {
+    billDueDays = await getBillDueDays();
+  } catch (err) {
+    /* leave blank - the server fills it in from the same setting */
+  }
+  const dueStr = billDueDays === null ? '' : toDateInputValue(addDays(today, billDueDays));
   const COMMON_TYPES = ['Rent','Electricity','Water','Maintenance','Repair','Damage','Parking','Penalty'];
 
   openModal('Create bills', `
@@ -62,7 +80,7 @@ async function openBillModal(presetUserId){
 
         <div class="field full">
           <label for="bDue">Due date</label>
-          <input id="bDue" type="date" value="${due.toISOString().slice(0,10)}">
+          <input id="bDue" type="date" value="${dueStr}">
         </div>
 
         <div class="field full" style="margin-bottom:8px;">
@@ -194,6 +212,27 @@ async function openBillModal(presetUserId){
     });
     recalcTotal();
   });
+
+  /* Keep the due date in step with the bill date. The due period is defined
+     against the bill date ("bill date + N days"), so back-dating a bill and
+     leaving a due date measured from today would quietly contradict that.
+     Stops the moment the admin edits the due date themselves - a deliberate
+     override is never overwritten. */
+  (() => {
+    const dueInput      = document.getElementById('bDue');
+    const billDateInput = document.getElementById('bBillDate');
+    if (!dueInput || !billDateInput) return;
+
+    let dueManuallyEdited = false;
+    dueInput.addEventListener('input', () => { dueManuallyEdited = true; });
+
+    billDateInput.addEventListener('change', () => {
+      if (dueManuallyEdited || billDueDays === null || !billDateInput.value) return;
+      const base = new Date(billDateInput.value + 'T00:00:00');
+      if (isNaN(base)) return;
+      dueInput.value = toDateInputValue(addDays(base, billDueDays));
+    });
+  })();
 
   document.getElementById('saveBtn').addEventListener('click', async () => {
     const form = document.getElementById('billForm');
