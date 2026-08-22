@@ -155,6 +155,18 @@ function tpUploadOpenToday(){
   return v === undefined || v === null ? true : Boolean(v);
 }
 
+/* "Allow gallery upload": may the photo come from the phone's existing
+   photos, or must it be taken with the camera right now?
+
+   Defaults to FALSE when the field is absent - the opposite of the photo
+   switches above. Those default permissive so an older backend keeps working
+   as before; here "as before" IS camera-only, so a missing field must not
+   quietly open the gallery. */
+function tpGalleryUploadAllowed(){
+  const v = tp.publicSettings && tp.publicSettings.meter_gallery_upload_enabled;
+  return v === undefined || v === null ? false : Boolean(v);
+}
+
 /* The configured window as a sentence in the tenant's own language. */
 function tpUploadWindowText(){
   const w = (tp.publicSettings && tp.publicSettings.meter_upload_window) || {};
@@ -393,6 +405,7 @@ function openSendReadingModal(meterId){
   const prev = Number(meter.previous_reading);
   const photoAllowed = tpPhotoUploadAllowed();
   const photoRequired = tpPhotoRequired();
+  const galleryAllowed = tpGalleryUploadAllowed();
   // With the photo step gone the reading becomes step 1, so the numbers stay
   // 1,2 instead of leaving a gap where the photo used to be.
   const readingStep = photoAllowed ? 2 : 1;
@@ -406,9 +419,9 @@ function openSendReadingModal(meterId){
 
       ${photoAllowed ? `
       <div class="tp-field">
-        <label for="tmPhoto"><span class="tp-step">1</span> ${t('form.step1')}</label>
-        <input id="tmPhoto" type="file" accept="image/*" capture="environment" class="tp-file">
-        <div class="tp-field-hint">${t('form.step1Hint')}</div>
+        <label for="tmPhoto"><span class="tp-step">1</span> ${galleryAllowed ? t('form.step1Gallery') : t('form.step1')}</label>
+        <input id="tmPhoto" type="file" accept="image/*"${galleryAllowed ? '' : ' capture="environment"'} class="tp-file">
+        <div class="tp-field-hint">${galleryAllowed ? t('form.step1GalleryHint') : t('form.step1Hint')}</div>
         <div id="tmPreviewWrap" class="tp-preview" style="display:none;">
           <img id="tmPreview" alt="The photo you selected">
         </div>

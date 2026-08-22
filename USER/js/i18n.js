@@ -217,6 +217,12 @@ const STRINGS = {
   'form.note':        { mr: 'ऑफिसला काही सांगायचे आहे का?', en: 'Anything to tell the office?' },
   'form.optional':    { mr: '(ऐच्छिक)',         en: '(optional)' },
   'form.notePlaceholder':{ mr: 'उदा. शेवटचा आकडा स्पष्ट दिसत नाही', en: 'e.g. the last digit is hard to see' },
+  /* ---- photo source (Settings -> Meter readings -> Allow gallery upload) ---- */
+  'form.step1Gallery':     { mr: 'मीटरचा फोटो काढा किंवा निवडा',
+                             en: 'Take or choose a photo of the meter' },
+  'form.step1GalleryHint': { mr: 'आत्ता फोटो काढा, किंवा मोबाइलमध्ये आधीच असलेला फोटो निवडा. आकडे स्पष्ट दिसले पाहिजेत.',
+                             en: 'Take one now, or pick one already on your phone. The numbers must be clearly readable.' },
+
   /* ---- reading submission window (Settings -> Meter readings) ----
      Shown when the office has limited which days of the month readings may
      be sent. {from}/{to} are replaced with the configured day numbers by the
