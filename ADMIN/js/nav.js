@@ -124,6 +124,39 @@ const viewMeta = {
   settings:  { title:'Settings', crumb:'Rename the app, change wording, photo limits and billing behaviour', action:null },
 };
 
+/* ================================================================
+   TERMINOLOGY LABELS — resolves viewMeta's title/crumb/action for the
+   views whose wording depends on Settings -> Branding (word for a shop /
+   complex / tenant). Left as a small override on top of the static
+   viewMeta above rather than rewriting it into functions, so every other
+   view's plain strings are untouched. Called fresh on every navigateTo()
+   (cheap - just string building) so it always reflects the latest saved
+   labels, not whatever was true at page load.
+   ================================================================ */
+function resolveViewMeta(view){
+  const meta = viewMeta[view];
+  if (view === 'complexes'){
+    return { title: LP('complex'), crumb: `Buildings and properties you manage`, action: `Add ${L('complex')}` };
+  }
+  if (view === 'shops'){
+    return { title: LP('shop'), crumb: `Units across all ${LP('complex').toLowerCase()}`, action: `Add ${L('shop')}` };
+  }
+  if (view === 'users'){
+    return { title: meta.title, crumb: `Admins and ${LP('tenant').toLowerCase()}`, action: meta.action };
+  }
+  return meta;
+}
+
+/* Persistent sidebar item text (unlike the top-bar title/crumb, this is
+   always on screen, so it's refreshed once from applyBranding() rather
+   than only when that view is opened). */
+function applyNavLabels(){
+  const shopLabel = document.querySelector('.nav-item[data-view="shops"] .nav-item-label');
+  if (shopLabel) shopLabel.textContent = LP('shop');
+  const complexLabel = document.querySelector('.nav-item[data-view="complexes"] .nav-item-label');
+  if (complexLabel) complexLabel.textContent = LP('complex');
+}
+
 document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
   btn.addEventListener('click', () => { navigateTo(btn.dataset.view); closeSidebar(); });
 });
@@ -139,7 +172,7 @@ async function navigateTo(view){
     saveCollapsedGroups(getCollapsedGroups().filter(n => n !== parentGroup.dataset.group));
     updateCollapseAllBtn();
   }
-  const meta = viewMeta[view];
+  const meta = resolveViewMeta(view);
   document.getElementById('viewTitle').textContent = meta.title;
   document.getElementById('viewCrumb').textContent = meta.crumb;
   const actionBtn = document.getElementById('primaryActionBtn');

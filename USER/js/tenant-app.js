@@ -44,6 +44,8 @@ async function loadTenantData(){
       tp.publicSettings = home.settings || null;
       tp.loaded = true;
       if (home.settings?.app_name) document.title = home.settings.app_name;
+      if (home.settings?.currency_symbol) window.__currencySymbol = home.settings.currency_symbol;
+      if (home.settings?.labels) window.__labels = home.settings.labels;
       return;
     }
   } catch (err) {
@@ -75,6 +77,8 @@ async function loadTenantData(){
   tp.loaded   = true;
 
   if (settings?.app_name) document.title = settings.app_name;
+  if (settings?.currency_symbol) window.__currencySymbol = settings.currency_symbol;
+  if (settings?.labels) window.__labels = settings.labels;
 }
 
 /* ================================================================

@@ -50,9 +50,9 @@ const STRINGS = {
   'home.remainingLabel':{ mr: 'बाकी',           en: 'remaining' },
 
   /* ---- home: shop + meter blocks ---- */
-  'home.myShops':    { mr: 'माझी दुकाने',      en: 'My shops' },
-  'shop.number':     { mr: 'दुकान क्रमांक',    en: 'Shop number' },
-  'shop.complex':    { mr: 'इमारत',            en: 'Complex' },
+  'home.myShops':    { mr: 'माझी दुकाने',      en: 'My {shops}' },
+  'shop.number':     { mr: 'दुकान क्रमांक',    en: '{Shop} number' },
+  'shop.complex':    { mr: 'इमारत',            en: '{Complex}' },
   'shop.rent':       { mr: 'भाडे',             en: 'Rent' },
   'shop.perMonth':   { mr: 'दर महिना',         en: 'per month' },
   'shop.agreement':      { mr: 'करार',              en: 'Agreement' },
@@ -72,7 +72,7 @@ const STRINGS = {
   'meter.noneYet':   { mr: 'अजून रीडिंग दिलेले नाही', en: 'No reading sent yet' },
   'meter.waiting':   { mr: 'तुमचे रीडिंग ऑफिसकडे तपासणीसाठी आहे',
                        en: 'Your reading is with the office for checking' },
-  'meter.noMeter':   { mr: 'या दुकानाला मीटर नाही', en: 'No meter for this shop' },
+  'meter.noMeter':   { mr: 'या दुकानाला मीटर नाही', en: 'No meter for this {shop}' },
 
   /* ---- bills ---- */
   'bills.stillToPay':{ mr: 'एकूण बाकी',        en: 'Still to pay' },
@@ -95,7 +95,7 @@ const STRINGS = {
   'state.paid':      { mr: 'भरले',             en: 'Paid' },
 
   /* ---- bill types ---- */
-  'type.Rent':        { mr: 'दुकान भाडे',      en: 'Shop rent' },
+  'type.Rent':        { mr: 'दुकान भाडे',      en: '{Shop} rent' },
   'type.Electricity': { mr: 'वीज बिल',         en: 'Electricity' },
   'type.Water':       { mr: 'पाणी बिल',        en: 'Water' },
   'type.Maintenance': { mr: 'देखभाल',          en: 'Maintenance' },
@@ -175,7 +175,7 @@ const STRINGS = {
   'meter.rejectedAgain':{ mr: 'कृपया स्पष्ट फोटो काढून पुन्हा पाठवा.',
                           en: 'Please take a clearer photo and send it again.' },
   'meter.sendAgain':  { mr: 'पुन्हा पाठवा',    en: 'Send again' },
-  'meter.noMeterTitle':{ mr: 'तुमच्या दुकानाला मीटर नाही', en: 'No meter for your shop' },
+  'meter.noMeterTitle':{ mr: 'तुमच्या दुकानाला मीटर नाही', en: 'No meter for your {shop}' },
   'meter.noMeterSub': { mr: 'तुमच्याकडे वीज मीटर असल्यास ऑफिसला सांगा.',
                         en: 'If you have an electricity submeter, ask the office to add it.' },
   'meter.currentPhoto':{ mr: 'सध्याचा फोटो',    en: 'Current reading' },
@@ -190,6 +190,22 @@ const STRINGS = {
   'meter.days':       { mr: 'दिवस',            en: 'days' },
   'meter.viewPhoto':  { mr: 'फोटो पहा',        en: 'View photo' },
   'meter.viewBill':   { mr: 'बिल पहा',         en: 'View bill' },
+
+  /* ---- meter tab: multi-meter switcher + summary + paginated history ---- */
+  'meter.shopLabel':   { mr: 'दुकान',            en: '{Shop}' },
+  'meter.lastReading': { mr: 'शेवटचे रीडिंग',     en: 'Last reading' },
+  'meter.capturedOn':  { mr: 'फोटो काढल्याची तारीख', en: 'Captured on' },
+  'meter.daySince':    { mr: 'दिवसांपूर्वी',       en: 'day ago' },
+  'meter.daysSinceMany':{ mr: 'दिवसांपूर्वी',      en: 'days ago' },
+  'meter.today':       { mr: 'आज',               en: 'Today' },
+  'meter.noReadingsYet':{ mr: 'या मीटरसाठी अजून रीडिंग नाही', en: 'No readings yet for this meter' },
+  'meter.readingCol':  { mr: 'रीडिंग',           en: 'Reading' },
+  'meter.daysCol':     { mr: 'दिवस',             en: 'Days' },
+  'meter.loadMore':    { mr: 'आणखी दाखवा',        en: 'Load more' },
+  'meter.loading':     { mr: 'लोड होत आहे…',      en: 'Loading…' },
+  'meter.historyLoadFailed':{ mr: 'रीडिंग इतिहास लोड होऊ शकला नाही.', en: "Couldn't load reading history." },
+  'meter.noImage':     { mr: 'फोटो नाही',         en: 'No photo' },
+  'meter.noBill':      { mr: '—',                en: '—' },
 
   /* ---- send reading form ---- */
   'form.lastWas':     { mr: 'तुमचे शेवटचे मंजूर रीडिंग होते',  en: 'Your last confirmed reading was' },
@@ -213,7 +229,7 @@ const STRINGS = {
   'more.payNote':     { mr: 'पैसे ऑफिसमध्ये नोंदवले जातात. नोंद झाल्यावर ते "भरलेले पैसे" मध्ये दिसतात.',
                         en: 'Payments are recorded by the office. Once recorded, they appear under the "I paid" tab.' },
   'more.deposit':     { mr: 'अनामत रक्कम',     en: 'Security deposit' },
-  'more.depositNeeded':{ mr: 'दुकानासाठी अनामत', en: 'Deposit for your shop' },
+  'more.depositNeeded':{ mr: 'दुकानासाठी अनामत', en: 'Deposit for your {shop}' },
   'more.depositPaid': { mr: 'तुम्ही भरले',     en: 'You have paid' },
   'more.depositLeft': { mr: 'बाकी',            en: 'Still to pay' },
   'more.depositDone': { mr: 'पूर्ण भरले ✓',    en: 'Fully paid ✓' },
@@ -258,10 +274,32 @@ const MONTHS_SHORT = {
 };
 
 /* ---- API ---- */
+
+/* A handful of English strings above carry {Shop}/{shop}/{shops}/{Complex}/
+   {complex} placeholders so an admin-configured word (Settings -> Branding
+   in the admin portal, e.g. "Unit" instead of "Shop") can be substituted
+   in. Marathi is deliberately left alone - see the note at the top of this
+   file about why that wording is hand-crafted, not literal. With no
+   override set, L()/LP() fall back to exactly "Shop"/"Complex", so this is
+   a no-op until an admin actually changes something. Requires core.js
+   (L/LP) to already be loaded, which it is by the time any view calls
+   t() - i18n.js only runs earlier at *parse* time, not at render time. */
+function interpolateLabels(str){
+  if (typeof L !== 'function') return str;
+  return str
+    .replace(/\{Shop\}/g, L('shop'))
+    .replace(/\{shop\}/g, L('shop').toLowerCase())
+    .replace(/\{shops\}/g, LP('shop').toLowerCase())
+    .replace(/\{Complex\}/g, L('complex'))
+    .replace(/\{complex\}/g, L('complex').toLowerCase())
+    .replace(/\{complexes\}/g, LP('complex').toLowerCase());
+}
+
 function t(key, fallback){
   const entry = STRINGS[key];
   if (!entry) return fallback !== undefined ? fallback : key;
-  return entry[currentLang] || entry.en || key;
+  const value = entry[currentLang] || entry.en || key;
+  return currentLang === 'en' ? interpolateLabels(value) : value;
 }
 
 function getLang(){ return currentLang; }

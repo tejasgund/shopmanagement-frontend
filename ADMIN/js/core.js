@@ -115,7 +115,36 @@ function escapeHtml(str){
 /* ================================================================
    FORMATTERS
    ================================================================ */
-const currency = (n) => '₹' + Number(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const currency = (n) => (window.__currencySymbol || '₹') + Number(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/* ================================================================
+   TERMINOLOGY LABELS
+   Admin-configurable words for "tenant"/"shop"/"complex" (Settings ->
+   Branding), so a new client can call these "Customer"/"Unit"/"Property"
+   etc. without a code change. window.__labels is populated from
+   /api/settings/public (see applyBranding() in settings.js); until that
+   resolves, or for a key an admin hasn't overridden, DEFAULT_LABELS is
+   used - same fallback pattern as currency() above.
+   ================================================================ */
+const DEFAULT_LABELS = { tenant: 'Tenant', shop: 'Shop', complex: 'Complex' };
+
+function L(key){
+  return (window.__labels && window.__labels[key]) || DEFAULT_LABELS[key] || key;
+}
+
+/* Simple English pluraliser - good enough for the kind of one-word nouns
+   this setting is meant for (Shop/Unit/Stall, Complex/Property/Building,
+   Tenant/Customer/Shopkeeper). Not a general-purpose pluraliser. */
+function pluralize(word){
+  const w = String(word || '');
+  if (/[sxz]$|[cs]h$/i.test(w)) return w + 'es';
+  if (/[^aeiou]y$/i.test(w)) return w.slice(0, -1) + 'ies';
+  return w + 's';
+}
+
+function LP(key){
+  return pluralize(L(key));
+}
 const dateFmt = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);

@@ -3,7 +3,29 @@
 
    Written for someone standing at their meter holding a phone:
    one card, one big button, photo, number, send.
+
+   A tenant can have more than one submeter (e.g. separate light/power
+   meters on the same shop). Only ONE meter's reading history is ever
+   fetched/shown at a time - switching meters never mixes one meter's
+   readings into another's, and opening one meter never has to load
+   every other meter's full history. See tmMeterState below.
    ================================================================ */
+
+/* Which meter's detail panel (summary + history) is currently showing.
+   Persists across re-renders within the tab so switching back to a
+   meter you already opened doesn't re-fetch it (see tmMeterState). */
+let tmSelectedMeterId = null;
+
+/* Per-meter cache: { rows, page, total, limit, loading, error, loaded }.
+   Keyed by meter id so opening one meter never touches another's data.
+   Cleared for a meter only when that meter's data actually changes
+   (a new reading is submitted for it - see openSendReadingModal). */
+const tmMeterState = {};
+
+/* Bumped on every fetch so a slow, superseded request can never
+   overwrite what a newer one already rendered (e.g. rapid meter
+   switching, or double-clicking "Load more"). */
+let tmRequestSeq = 0;
 
 function renderMeterScreen(){
   if (!tp.meters.length){
@@ -13,6 +35,14 @@ function renderMeterScreen(){
       <div class="tp-empty-sub">${t('meter.noMeterSub')}</div>
     </div>`;
   }
+
+  // Keep whatever meter was already selected if it still exists; otherwise
+  // (first visit, or that meter was deactivated/reassigned since) default
+  // to the first one.
+  if (!tp.meters.some(m => m.id === tmSelectedMeterId)){
+    tmSelectedMeterId = tp.meters[0].id;
+  }
+  const selected = tp.meters.find(m => m.id === tmSelectedMeterId);
 
   const rejected = tp.readings.find(r => r.status === 'rejected');
   const stillRejected = rejected &&
@@ -27,125 +57,271 @@ function renderMeterScreen(){
       ${t('meter.rejectedAgain')}
     </div>` : ''}
 
-    ${tp.meters.map(meterCardHtml).join('')}
-    ${meterHistoryHtml()}
-  `;
-}
-
-/* Newest-first readings for this meter, used to tell "current" from "old". */
-function meterReadingsSorted(meterId){
-  return tp.readings
-    .filter(r => r.meter_id === meterId)
-    .sort((a, b) => new Date(b.reading_date) - new Date(a.reading_date));
-}
-
-function meterCardHtml(m){
-  const [current, old] = meterReadingsSorted(m.id);
-  const photoSlots = [
-    current && current.has_photo ? { slot: 'current', reading: current, label: t('meter.currentPhoto') } : null,
-    old && old.has_photo ? { slot: 'old', reading: old, label: t('meter.oldPhoto') } : null,
-  ].filter(Boolean);
-
-  return `
-  <div class="tp-meter-card">
-    <div class="tp-meter-head">
-      <div>
-        <div class="tp-meter-no">${t('meter.number')} ${escapeHtml(m.meter_number)}</div>
-        <div class="tp-meter-shop">${escapeHtml(m.shop_number || '')}</div>
-      </div>
-    </div>
+    ${meterSwitcherHtml()}
+    ${meterHeaderHtml(selected)}
 
     <div class="tp-meter-prev">
       <span>${t('meter.lastConfirmed')}</span>
-      <strong>${Number(m.previous_reading).toLocaleString('en-IN')}</strong>
+      <strong>${Number(selected.previous_reading).toLocaleString('en-IN')}</strong>
     </div>
 
-    ${photoSlots.length ? `
-    <div class="tp-meter-photos">
-      ${photoSlots.map(p => `
-        <button type="button" class="tp-meter-photo" data-meter-photo="${p.reading.id}" data-meter-photo-slot="${p.slot}">
-          <div class="tp-meter-photo-frame" id="tmPhotoFrame-${p.reading.id}">
-            <span class="tp-spinner tp-spinner-dark"></span>
-          </div>
-          <span class="tp-meter-photo-label">${p.label} · ${dateFmt(p.reading.reading_date)}</span>
-        </button>`).join('')}
-    </div>` : ''}
+    ${meterActionHtml(selected)}
 
-    ${m.has_pending ? `
-      <div class="tp-meter-waiting">
-        <strong>${t('meter.sentTitle')}</strong>
-        ${t('meter.sentBody')}
-      </div>
-    ` : `
-      <button class="tp-btn tp-btn-primary tp-btn-block tp-btn-lg" data-send-reading="${m.id}">
-        ${t('meter.sendThisMonth')}
-      </button>
-    `}
+    <div id="meterDetailPanel">${meterDetailPanelHtml(selected.id)}</div>
+  `;
+}
+
+/* ================================================================
+   MULTIPLE SUBMETERS: switcher + prominent header
+   Chips only appear once there's something to switch between - a
+   tenant with a single meter sees exactly what they saw before.
+   ================================================================ */
+function meterSwitcherHtml(){
+  if (tp.meters.length <= 1) return '';
+  return `
+  <div class="tp-meter-switcher">
+    ${tp.meters.map(m => `
+      <button type="button" class="tp-chip ${m.id === tmSelectedMeterId ? 'active' : ''}"
+              data-switch-meter="${m.id}">
+        ${escapeHtml(m.meter_number)}${m.has_pending ? ' •' : ''}
+      </button>`).join('')}
   </div>`;
 }
 
-function meterHistoryHtml(){
-  const rows = tp.readings.slice(0, 12);
-  if (!rows.length) return '';
-
+/* Meter number + shop number, highlighted at the top - per-meter, never
+   ambiguous about which meter's data is on screen below it. */
+function meterHeaderHtml(m){
   return `
-  <div class="tp-block">
-    <div class="tp-block-head"><h2>${t('meter.history')}</h2></div>
-    ${rows.map(r => r.status === 'approved' ? approvedReadingCardHtml(r) : pendingRejectedRowHtml(r)).join('')}
-  </div>`;
-}
-
-/* Approved readings get a compact card with all six figures + actions.
-   Pending/rejected readings keep the plain row below, unchanged. */
-function approvedReadingCardHtml(r){
-  return `
-  <div class="tp-reading-card">
-    <div class="tp-reading-grid">
-      <div class="tp-reading-kv"><span>${t('meter.date')}</span><strong>${dateFmt(r.reading_date)}</strong></div>
-      <div class="tp-reading-kv"><span>${t('meter.unit')}</span><strong>${Number(r.customer_reading).toLocaleString('en-IN')}</strong></div>
-      <div class="tp-reading-kv"><span>${t('meter.unitsUsed')}</span><strong>${r.calculated_units != null ? Number(r.calculated_units).toLocaleString('en-IN') : '—'}</strong></div>
-      <div class="tp-reading-kv"><span>${t('meter.pricePerUnit')}</span><strong>${r.unit_price_applied != null ? currency(r.unit_price_applied) : '—'}</strong></div>
-      <div class="tp-reading-kv"><span>${t('meter.billTotal')}</span><strong>${r.bill ? currency(r.bill.amount) : '—'}</strong></div>
-      <div class="tp-reading-kv"><span>${t('meter.billingPeriod')}</span><strong>${billingPeriodLabel(r)}</strong></div>
-    </div>
-    <div class="tp-reading-actions">
-      ${r.has_photo ? `<button type="button" class="tp-btn tp-btn-ghost tp-btn-sm" data-meter-photo="${r.id}">${t('meter.viewPhoto')}</button>` : ''}
-      ${r.bill ? `<button type="button" class="tp-link" data-view-bill="${r.bill.id}">${t('meter.viewBill')}</button>` : ''}
-    </div>
-  </div>`;
-}
-
-function pendingRejectedRowHtml(r){
-  const label = r.status === 'rejected' ? t('meter.rejected') : t('meter.checking');
-  const cls = r.status === 'rejected' ? 'unpaid' : 'part';
-  return `
-  <div class="tp-row">
+  <div class="tp-meter-header">
     <div>
-      <div class="tp-row-title">${dateFmt(r.reading_date)}</div>
-      <div class="tp-row-sub">${t('meter.youSent')} ${Number(r.customer_reading).toLocaleString('en-IN')}</div>
-      ${r.status === 'rejected' && r.rejection_reason
-        ? `<div class="tp-row-warn">${escapeHtml(r.rejection_reason)}</div>` : ''}
-    </div>
-    <div class="tp-row-right">
-      <span class="tp-state tp-state-${cls}">${label}</span>
-      ${r.bill ? `<div class="tp-row-amount">${currency(r.bill.amount)}</div>` : ''}
+      <div class="tp-meter-header-no">${t('meter.number')} ${escapeHtml(m.meter_number)}</div>
+      <div class="tp-meter-header-shop">${t('meter.shopLabel')} ${escapeHtml(m.shop_number || '—')}</div>
     </div>
   </div>`;
 }
 
-/* Backend has no explicit billing-period field, so it's derived: days
-   between this approved reading and the previous approved reading for
-   the same meter. First-ever reading for a meter has no prior point. */
-function billingPeriodLabel(r){
-  const meterApproved = tp.readings
-    .filter(x => x.meter_id === r.meter_id && x.status === 'approved')
+function meterActionHtml(m){
+  return m.has_pending ? `
+    <div class="tp-meter-waiting">
+      <strong>${t('meter.sentTitle')}</strong>
+      ${t('meter.sentBody')}
+    </div>
+  ` : `
+    <button class="tp-btn tp-btn-primary tp-btn-block tp-btn-lg" data-send-reading="${m.id}">
+      ${t('meter.sendThisMonth')}
+    </button>
+  `;
+}
+
+/* ================================================================
+   SUMMARY SIDEBAR + PAGINATED HISTORY (one meter at a time)
+
+   Rendered from tmMeterState[meterId], which is populated by
+   loadMeterDetail() below via GET /api/tenant/meters/{id}/readings -
+   a new, paginated, single-meter endpoint. Nothing here touches
+   tp.readings (the shared, cross-meter, capped-at-24 list the Home
+   tab uses) so this can never mix one meter's history into another's,
+   and never depends on whether this particular meter's readings
+   happened to survive that shared cap.
+   ================================================================ */
+function meterDetailPanelHtml(meterId){
+  const st = tmMeterState[meterId];
+
+  // First visit to this meter this session, or a request is already in
+  // flight for it and nothing has ever loaded yet.
+  if (!st || (!st.loaded && st.loading)){
+    return `
+    <div class="tp-block">
+      <div class="tp-block-head"><h2>${t('meter.lastReading')}</h2></div>
+      <div style="padding:26px 16px; text-align:center;"><span class="tp-spinner tp-spinner-dark"></span></div>
+    </div>`;
+  }
+
+  if (st.error && !st.loaded){
+    return `
+    <div class="tp-block">
+      <div class="tp-inline-note tp-inline-warn">
+        ${escapeHtml(st.error)}
+        <div style="margin-top:8px;">
+          <button type="button" class="tp-link" data-retry-meter="${meterId}">${t('common.tryAgain')}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const rows = st.rows;
+  const last = rows[0] || null;
+  const hasMore = st.total > rows.length;
+
+  return `
+    ${meterSummaryHtml(last)}
+    <div class="tp-block">
+      <div class="tp-block-head"><h2>${t('meter.history')}</h2></div>
+      ${rows.length === 0
+        ? `<div class="tp-inline-note">${t('meter.noReadingsYet')}</div>`
+        : rows.map(r => historyRowHtml(r, rows)).join('')}
+      ${hasMore ? `
+      <div style="padding:14px 16px;">
+        <button type="button" class="tp-btn tp-btn-ghost tp-btn-block"
+                data-load-more-meter="${meterId}" ${st.loading ? 'disabled' : ''}>
+          ${st.loading ? `<span class="tp-spinner"></span> ${t('meter.loading')}` : t('meter.loadMore')}
+        </button>
+      </div>` : ''}
+    </div>
+  `;
+}
+
+/* Last reading image, value, captured date, and days-since - all for
+   the SELECTED meter only. `last` is the newest row from that meter's
+   own paginated history (any status - pending/rejected included, since
+   "what did I last send" is the question this answers), or null when
+   the meter has never had a reading submitted at all. */
+function meterSummaryHtml(last){
+  if (!last){
+    return `
+    <div class="tp-meter-summary">
+      <div class="tp-meter-summary-photo"><div class="tp-meter-summary-photo-empty">${t('meter.noImage')}</div></div>
+      <div class="tp-meter-summary-body">
+        <div class="tp-meter-summary-label">${t('meter.lastReading')}</div>
+        <div class="tp-meter-summary-value">—</div>
+        <div class="tp-meter-summary-meta">${t('meter.noReadingsYet')}</div>
+      </div>
+    </div>`;
+  }
+
+  const value = last.status === 'approved' && last.approved_reading != null
+    ? last.approved_reading : last.customer_reading;
+
+  return `
+  <div class="tp-meter-summary">
+    ${last.has_photo ? `
+    <button type="button" class="tp-meter-summary-photo" data-meter-photo="${last.id}"
+            id="tmSummaryPhotoFrame-${last.id}">
+      <span class="tp-spinner tp-spinner-dark"></span>
+    </button>` : `
+    <div class="tp-meter-summary-photo"><div class="tp-meter-summary-photo-empty">${t('meter.noImage')}</div></div>`}
+    <div class="tp-meter-summary-body">
+      <div class="tp-meter-summary-label">${t('meter.lastReading')}</div>
+      <div class="tp-meter-summary-value">${Number(value).toLocaleString('en-IN')}</div>
+      <div class="tp-meter-summary-meta">
+        ${t('meter.capturedOn')} ${dateFmt(last.reading_date)}<br>
+        <span class="tp-meter-summary-days">${daysSinceLabel(last.reading_date)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* Days completed since the last reading - dynamically computed against
+   "now", safely, using the same date-only daysBetween() every other
+   "days late" figure in the portal already uses (core.js), so this can
+   never disagree with the rest of the app about how a day is counted.
+   Handles missing dates, unparseable dates, and future/clock-skewed
+   dates by falling back to '—' rather than showing a wrong or negative
+   number - the same safe-fallback convention used everywhere else in
+   this file (see historyRowHtml's Days column). */
+function daysSinceLabel(iso){
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  const days = daysBetween(d, new Date());
+  if (days < 0) return '—';                 // future-dated / clock skew - never show negative
+  if (days === 0) return t('meter.today');
+  return `${days} ${days === 1 ? t('meter.daySince') : t('meter.daysSinceMany')}`;
+}
+
+/* One row of the reading history table: Reading | Date | Days | See Image |
+   See Bill. `allRows` is every row of THIS meter loaded so far (across
+   however many pages have been fetched) - used only to find the previous
+   approved reading for the Days column below. */
+function historyRowHtml(r, allRows){
+  const value = r.status === 'approved' && r.approved_reading != null
+    ? r.approved_reading : r.customer_reading;
+
+  const daysLabel = billingPeriodDaysLabel(r, allRows);
+
+  const statusNote = r.status === 'rejected'
+    ? `<span class="tp-state tp-state-unpaid" style="margin-top:4px; display:inline-block;">${t('meter.rejected')}</span>`
+    : r.status === 'pending'
+      ? `<span class="tp-state tp-state-part" style="margin-top:4px; display:inline-block;">${t('meter.checking')}</span>`
+      : '';
+
+  return `
+  <div class="tp-history-row">
+    <div class="tp-history-kv">
+      <span>${t('meter.readingCol')}</span>
+      <strong>${Number(value).toLocaleString('en-IN')}</strong>
+      ${statusNote}
+    </div>
+    <div class="tp-history-kv"><span>${t('meter.date')}</span><strong>${dateFmt(r.reading_date)}</strong></div>
+    <div class="tp-history-kv"><span>${t('meter.daysCol')}</span><strong>${daysLabel}</strong></div>
+    <div>${r.has_photo
+      ? `<button type="button" class="tp-history-action" data-meter-photo="${r.id}">${t('meter.viewPhoto')}</button>`
+      : `<span class="tp-history-action" style="color:var(--muted); text-decoration:none;">${t('meter.noImage')}</span>`}</div>
+    <div>${r.bill
+      ? `<button type="button" class="tp-history-action" data-view-bill="${r.bill.id}">${t('meter.viewBill')}</button>`
+      : `<span class="tp-history-action" style="color:var(--muted); text-decoration:none;">${t('meter.noBill')}</span>`}</div>
+    ${r.status === 'rejected' && r.rejection_reason ? `
+    <div class="tp-row-warn" style="grid-column:1/-1;">${escapeHtml(r.rejection_reason)}</div>` : ''}
+  </div>`;
+}
+
+/* Existing "billing period" idea, unchanged: days between an approved
+   reading and the previous APPROVED reading of the same meter - the
+   figure this app has always shown for "Days", just relocated into the
+   history table's Days column instead of a "Billing period" line.
+   Only searches rows already loaded for this meter, so the very oldest
+   row on a not-yet-fully-loaded page can show '—' until "Load more" is
+   used - a safe, self-correcting gap, never a wrong number. */
+function billingPeriodDaysLabel(r, allRows){
+  if (r.status !== 'approved') return '—';
+  const approved = allRows
+    .filter(x => x.status === 'approved')
     .sort((a, b) => new Date(b.reading_date) - new Date(a.reading_date));
-  const idx = meterApproved.findIndex(x => x.id === r.id);
-  const prev = meterApproved[idx + 1];
+  const idx = approved.findIndex(x => x.id === r.id);
+  const prev = approved[idx + 1];
   if (!prev) return '—';
   const days = Math.round((new Date(r.reading_date) - new Date(prev.reading_date)) / 86400000);
   if (days <= 0) return '—';
   return `${days} ${days === 1 ? t('meter.day') : t('meter.days')}`;
+}
+
+/* ================================================================
+   DATA LOADING (chunked, per meter, cached, stale-response-safe)
+   ================================================================ */
+async function loadMeterDetail(meterId, page = 1){
+  const seq = ++tmRequestSeq;
+  const st = tmMeterState[meterId] || (tmMeterState[meterId] = {
+    rows: [], page: 0, total: 0, limit: 10, loading: false, error: null, loaded: false,
+  });
+  st.loading = true;
+  st.error = null;
+  renderMeterDetailInPlace(meterId);
+
+  try {
+    const res = await api(`/api/tenant/meters/${meterId}/readings?page=${page}&limit=${st.limit}`);
+    if (seq !== tmRequestSeq) return;   // a newer request has since started - drop this stale response
+    st.rows = page === 1 ? (res.data || []) : st.rows.concat(res.data || []);
+    st.page = res.page;
+    st.total = res.total;
+    st.loaded = true;
+  } catch (err) {
+    if (seq !== tmRequestSeq) return;
+    st.error = (err && err.message) || t('meter.historyLoadFailed');
+  } finally {
+    if (seq === tmRequestSeq) st.loading = false;
+  }
+  renderMeterDetailInPlace(meterId);
+}
+
+/* Replaces just the detail panel's DOM (not the whole tab) so paging
+   through one meter's history never disturbs the meter switcher, the
+   header above it, or scroll position. */
+function renderMeterDetailInPlace(meterId){
+  if (meterId !== tmSelectedMeterId) return;   // user switched meters meanwhile
+  const panel = document.getElementById('meterDetailPanel');
+  if (!panel) return;                          // user navigated to a different tab entirely
+  panel.innerHTML = meterDetailPanelHtml(meterId);
+  wireMeterDetailPanel(meterId);
 }
 
 /* ================================================================
@@ -241,6 +417,11 @@ function openSendReadingModal(meterId){
 
       closeModal();
       showToast(t('form.sent'), 'success');
+      // This meter's history just changed - drop its cache so the next
+      // time its panel renders it fetches fresh instead of showing the
+      // reading list from before this submission. Other meters' caches
+      // are untouched.
+      delete tmMeterState[meter.id];
       await refreshTenantPortal(false);
     } catch (err) {
       btn.disabled = false;
@@ -254,23 +435,56 @@ function attachMeterHandlers(){
   document.querySelectorAll('[data-send-reading]').forEach(btn =>
     btn.addEventListener('click', () => openSendReadingModal(Number(btn.dataset.sendReading))));
 
+  document.querySelectorAll('[data-switch-meter]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const id = Number(btn.dataset.switchMeter);
+      if (id === tmSelectedMeterId) return;
+      tmSelectedMeterId = id;
+      switchTab('meter');
+    }));
+
+  wireMeterDetailPanel(tmSelectedMeterId);
+
+  const st = tmMeterState[tmSelectedMeterId];
+  if (!st || (!st.loaded && !st.loading)){
+    loadMeterDetail(tmSelectedMeterId, 1);
+  }
+}
+
+/* Wires the buttons that live INSIDE #meterDetailPanel. Called both after
+   the full tab renders and after an async refresh replaces just the panel
+   (renderMeterDetailInPlace), since innerHTML replacement drops listeners. */
+function wireMeterDetailPanel(meterId){
   document.querySelectorAll('[data-meter-photo]').forEach(btn =>
     btn.addEventListener('click', () => openMeterPhotoModal(Number(btn.dataset.meterPhoto))));
 
   document.querySelectorAll('[data-view-bill]').forEach(btn =>
     btn.addEventListener('click', () => openBillSheet(Number(btn.dataset.viewBill))));
 
-  document.querySelectorAll('.tp-meter-photo-frame').forEach(frame => {
-    const readingId = frame.id.replace('tmPhotoFrame-', '');
+  document.querySelectorAll('[id^="tmSummaryPhotoFrame-"]').forEach(frame => {
+    const readingId = frame.id.replace('tmSummaryPhotoFrame-', '');
     loadMeterThumb(Number(readingId), frame);
   });
+
+  document.querySelectorAll('[data-load-more-meter]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const id = Number(btn.dataset.loadMoreMeter);
+      const st = tmMeterState[id];
+      if (!st || st.loading) return;   // guards against double-click / duplicate requests
+      loadMeterDetail(id, st.page + 1);
+    }));
+
+  document.querySelectorAll('[data-retry-meter]').forEach(btn =>
+    btn.addEventListener('click', () => loadMeterDetail(Number(btn.dataset.retryMeter), 1)));
 }
 
 /* ================================================================
-   OLD / CURRENT READING PHOTOS
+   READING PHOTOS
    Thumbnails load as authenticated blobs (same pattern the admin
    portal uses) since the photo endpoint needs the auth header and
-   can't be used as a plain <img src>.
+   can't be used as a plain <img src>. Loaded lazily - only the
+   summary sidebar's single thumbnail loads eagerly on render; every
+   history-row photo loads only once "View photo" is tapped.
    ================================================================ */
 const _meterPhotoUrlCache = {};
 

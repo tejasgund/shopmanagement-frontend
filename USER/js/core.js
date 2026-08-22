@@ -11,9 +11,10 @@ const API_BASE_URL = ""; // relative — same origin; Apache proxies /api to the
 
 /* How tenants can pay you. Methods only — deliberately no UPI IDs or
    account numbers, so nothing sensitive lives in the frontend.
-   Edit this one line to change what every tenant sees, or add a
-   `payment_methods` field to /api/settings/public and it will be used
-   instead automatically. */
+   Now backed by the `app.payment_methods` setting (Settings -> Branding ->
+   "How to pay") - see paymentMethodsText() in tenant-more.js. This
+   fallback only kicks in if that setting can't be fetched at all (offline
+   first load, etc.), not as the everyday way to change the text anymore. */
 const PAYMENT_METHODS_FALLBACK = "Cash, UPI or bank transfer at the office.";
 
 /* ================================================================
@@ -91,9 +92,37 @@ function escapeHtml(str){
 /* ================================================================
    FORMATTERS
    ================================================================ */
-const currency = (n) => '₹' + Number(n ?? 0).toLocaleString('en-IN', {
+const currency = (n) => (window.__currencySymbol || '₹') + Number(n ?? 0).toLocaleString('en-IN', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
+
+/* ================================================================
+   TERMINOLOGY LABELS
+   Same mechanism as ADMIN/js/core.js - admin-configurable words for
+   "tenant"/"shop"/"complex" (Settings -> Branding), populated into
+   window.__labels from /api/tenant/home or /api/settings/public (see
+   loadTenantData() in tenant-app.js). Falls back to DEFAULT_LABELS
+   until that resolves, or for any key an admin hasn't overridden.
+   ================================================================ */
+const DEFAULT_LABELS = { tenant: 'Tenant', shop: 'Shop', complex: 'Complex' };
+
+function L(key){
+  return (window.__labels && window.__labels[key]) || DEFAULT_LABELS[key] || key;
+}
+
+/* Simple English pluraliser - good enough for the kind of one-word nouns
+   this setting is meant for (Shop/Unit/Stall, Complex/Property/Building,
+   Tenant/Customer/Shopkeeper). Not a general-purpose pluraliser. */
+function pluralize(word){
+  const w = String(word || '');
+  if (/[sxz]$|[cs]h$/i.test(w)) return w + 'es';
+  if (/[^aeiou]y$/i.test(w)) return w.slice(0, -1) + 'ies';
+  return w + 's';
+}
+
+function LP(key){
+  return pluralize(L(key));
+}
 
 /* Dates are written out by hand rather than with toLocaleDateString, because
    Marathi month names aren't reliably available across the phone browsers

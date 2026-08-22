@@ -62,17 +62,34 @@ function settingFieldHtml(s){
     control = `<label for="${id}">${escapeHtml(s.label)}</label>
       <input id="${id}" type="number" ${s.type==='float'?'step="0.1"':'step="1"'}
              data-setting-key="${s.key}" data-setting-type="${s.type}" value="${escapeHtml(String(s.value))}">`;
+  } else if (s.type === 'secret'){
+    // Never pre-filled with the real value (the API never sends it). Blank
+    // on save = "leave unchanged" (see settings_service.set_many).
+    const placeholder = s.is_set
+      ? 'Already set — leave blank to keep it, or type a new value to replace it'
+      : 'Not set';
+    control = `<label for="${id}">${escapeHtml(s.label)}</label>
+      <input id="${id}" type="password" autocomplete="new-password"
+             data-setting-key="${s.key}" data-setting-type="secret"
+             placeholder="${escapeHtml(placeholder)}" value="">
+      <div class="hint" style="margin-top:2px;">${s.is_set ? '✓ Currently set' : '— Not set —'}</div>`;
   } else {
     control = `<label for="${id}">${escapeHtml(s.label)}</label>
       <input id="${id}" type="text" data-setting-key="${s.key}" data-setting-type="str"
              value="${escapeHtml(String(s.value ?? ''))}">`;
   }
 
+  // "secret" values always arrive blank from the API (never echoed back —
+  // see app.py's get_settings()), so a "reset to default" link here would
+  // be comparing against a blank that means nothing to the admin - suppress
+  // it for that type rather than showing a confusing “reset to “”” link.
+  const showResetLink = s.type !== 'secret' && !isDefault;
+
   return `
   <div class="field settings-field">
     ${control}
     <div class="hint">${escapeHtml(s.help)}
-      ${!isDefault ? `<button type="button" class="settings-reset-one" data-reset-key="${s.key}" data-default="${escapeHtml(String(s.default))}">reset to “${escapeHtml(String(s.default))}”</button>` : ''}
+      ${showResetLink ? `<button type="button" class="settings-reset-one" data-reset-key="${s.key}" data-default="${escapeHtml(String(s.default))}">reset to “${escapeHtml(String(s.default))}”</button>` : ''}
     </div>
   </div>`;
 }
@@ -148,6 +165,8 @@ async function applyBranding(){
     if (stamp) stamp.textContent = (name.trim()[0] || 'L').toUpperCase();
 
     if (cfg.currency_symbol) window.__currencySymbol = cfg.currency_symbol;
+    if (cfg.labels) window.__labels = cfg.labels;
+    applyNavLabels();
   } catch (err) {
     /* Branding is cosmetic — never block the app if it can't be fetched. */
   }

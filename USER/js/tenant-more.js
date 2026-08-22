@@ -79,9 +79,10 @@ function openMoreSheet(){
 /* ================================================================
    HOW TO PAY — methods only, never account numbers or UPI IDs.
 
-   Comes from the backend setting `payment.methods` if you add one to
-   /api/settings/public; otherwise this default is used. To change it
-   without any backend work, edit PAYMENT_METHODS_FALLBACK in core.js.
+   Comes from the backend setting `app.payment_methods` (admin-editable at
+   Settings -> Branding -> "How to pay"), sent down via both
+   /api/tenant/home and /api/settings/public. PAYMENT_METHODS_FALLBACK in
+   core.js is only used if that setting couldn't be fetched at all.
    ================================================================ */
 function paymentMethodsText(){
   return (tp.publicSettings && tp.publicSettings.payment_methods)
