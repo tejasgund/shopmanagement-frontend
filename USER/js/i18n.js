@@ -217,6 +217,20 @@ const STRINGS = {
   'form.note':        { mr: 'ऑफिसला काही सांगायचे आहे का?', en: 'Anything to tell the office?' },
   'form.optional':    { mr: '(ऐच्छिक)',         en: '(optional)' },
   'form.notePlaceholder':{ mr: 'उदा. शेवटचा आकडा स्पष्ट दिसत नाही', en: 'e.g. the last digit is hard to see' },
+  /* ---- reading submission window (Settings -> Meter readings) ----
+     Shown when the office has limited which days of the month readings may
+     be sent. {from}/{to} are replaced with the configured day numbers by the
+     caller - t() itself does no interpolation. */
+  'meter.windowClosedTitle': { mr: 'आज रीडिंग पाठवता येणार नाही',
+                               en: "Readings can't be sent today" },
+  'meter.windowRange':       { mr: 'दर महिन्याच्या {from} ते {to} तारखेदरम्यानच मीटर रीडिंग पाठवता येते.',
+                               en: 'Meter readings can only be sent between day {from} and day {to} of each month.' },
+  'meter.windowSingleDay':   { mr: 'दर महिन्याच्या {from} तारखेलाच मीटर रीडिंग पाठवता येते.',
+                               en: 'Meter readings can only be sent on day {from} of each month.' },
+  'meter.windowHelp':        { mr: 'अडचण असल्यास ऑफिसला कळवा — ते तुमच्यासाठी रीडिंग नोंदवू शकतात.',
+                               en: 'If you need help, tell the office — they can record the reading for you.' },
+  'meter.windowClosedBtn':   { mr: 'आज बंद आहे',  en: 'Closed today' },
+
   'form.needPhoto':   { mr: 'कृपया मीटरचा फोटो काढा', en: 'Please take a photo of the meter' },
   'form.needNumber':  { mr: 'कृपया मीटरवरील आकडा लिहा', en: 'Please type the number on the meter' },
   'form.tooLow':      { mr: 'हा आकडा तुमच्या मागील मंजूर रीडिंगपेक्षा लहान आहे. पुन्हा तपासा.',

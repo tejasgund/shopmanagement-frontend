@@ -101,16 +101,68 @@ function meterHeaderHtml(m){
 }
 
 function meterActionHtml(m){
-  return m.has_pending ? `
+  if (m.has_pending) return `
     <div class="tp-meter-waiting">
       <strong>${t('meter.sentTitle')}</strong>
       ${t('meter.sentBody')}
     </div>
-  ` : `
+  `;
+
+  // Outside the office's submission window: say so plainly and point at the
+  // way out, rather than showing a button that only fails when tapped.
+  if (!tpUploadOpenToday()) return `
+    <div class="tp-meter-waiting">
+      <strong>${t('meter.windowClosedTitle')}</strong>
+      ${escapeHtml(tpUploadWindowText())}<br>
+      ${t('meter.windowHelp')}
+    </div>
+    <button class="tp-btn tp-btn-block tp-btn-lg" disabled
+            style="margin-top:10px; opacity:.55; cursor:not-allowed;">
+      ${t('meter.windowClosedBtn')}
+    </button>
+  `;
+
+  return `
     <button class="tp-btn tp-btn-primary tp-btn-block tp-btn-lg" data-send-reading="${m.id}">
       ${t('meter.sendThisMonth')}
     </button>
   `;
+}
+
+/* ================================================================
+   SUBMISSION RULES (Settings -> Meter readings)
+   Both are enforced by the API as well; these only keep the portal from
+   offering something that would be refused on submit. Each defaults to the
+   permissive answer when the field is absent, so a portal talking to an
+   older backend behaves exactly as it did before these settings existed.
+   ================================================================ */
+
+function tpPhotoUploadAllowed(){
+  const v = tp.publicSettings && tp.publicSettings.meter_photo_upload_enabled;
+  return v === undefined || v === null ? true : Boolean(v);
+}
+
+function tpPhotoRequired(){
+  // Never "required" while uploads are off - the API drops that rule too, so
+  // the reading itself stays submittable.
+  if (!tpPhotoUploadAllowed()) return false;
+  const v = tp.publicSettings && tp.publicSettings.meter_photo_required;
+  return v === undefined || v === null ? true : Boolean(v);
+}
+
+function tpUploadOpenToday(){
+  const v = tp.publicSettings && tp.publicSettings.meter_upload_open_today;
+  return v === undefined || v === null ? true : Boolean(v);
+}
+
+/* The configured window as a sentence in the tenant's own language. */
+function tpUploadWindowText(){
+  const w = (tp.publicSettings && tp.publicSettings.meter_upload_window) || {};
+  const from = w.from_day, to = w.to_day;
+  if (!from || !to) return '';
+  return from === to
+    ? t('meter.windowSingleDay').replace('{from}', from)
+    : t('meter.windowRange').replace('{from}', from).replace('{to}', to);
 }
 
 /* ================================================================
@@ -331,7 +383,19 @@ function openSendReadingModal(meterId){
   const meter = tp.meters.find(m => m.id === meterId);
   if (!meter) return;
 
+  // Belt and braces: the card already hides the button outside the window,
+  // but a stale screen left open across midnight could still reach this.
+  if (!tpUploadOpenToday()){
+    showToast(tpUploadWindowText() || t('meter.windowClosedTitle'), 'error');
+    return;
+  }
+
   const prev = Number(meter.previous_reading);
+  const photoAllowed = tpPhotoUploadAllowed();
+  const photoRequired = tpPhotoRequired();
+  // With the photo step gone the reading becomes step 1, so the numbers stay
+  // 1,2 instead of leaving a gap where the photo used to be.
+  const readingStep = photoAllowed ? 2 : 1;
 
   openModal(`Meter ${meter.meter_number}`, `
     <div class="tp-sheet" id="tmForm">
@@ -340,6 +404,7 @@ function openSendReadingModal(meterId){
         ${t('form.mustBeHigher')}
       </div>
 
+      ${photoAllowed ? `
       <div class="tp-field">
         <label for="tmPhoto"><span class="tp-step">1</span> ${t('form.step1')}</label>
         <input id="tmPhoto" type="file" accept="image/*" capture="environment" class="tp-file">
@@ -348,10 +413,10 @@ function openSendReadingModal(meterId){
           <img id="tmPreview" alt="The photo you selected">
         </div>
         <div class="tp-field-error" id="tmPhotoErr" style="display:none;"></div>
-      </div>
+      </div>` : ''}
 
       <div class="tp-field">
-        <label for="tmReading"><span class="tp-step">2</span> ${t('form.step2')}</label>
+        <label for="tmReading"><span class="tp-step">${readingStep}</span> ${t('form.step2')}</label>
         <input id="tmReading" type="number" inputmode="decimal" step="0.01" min="0"
                class="tp-big-input" placeholder="${(prev + 250).toLocaleString('en-IN')}">
         <div class="tp-field-error" id="tmReadingErr" style="display:none;"></div>
@@ -369,7 +434,7 @@ function openSendReadingModal(meterId){
 
   document.getElementById('tmCancelBtn').addEventListener('click', closeModal);
 
-  document.getElementById('tmPhoto').addEventListener('change', (e) => {
+  document.getElementById('tmPhoto')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
     const wrap = document.getElementById('tmPreviewWrap');
     if (!file){ wrap.style.display = 'none'; return; }
@@ -379,11 +444,12 @@ function openSendReadingModal(meterId){
 
   document.getElementById('tmSubmitBtn').addEventListener('click', async () => {
     clearFieldErrors(document.getElementById('tmForm'));
-    const file = document.getElementById('tmPhoto').files[0];
+    const file = document.getElementById('tmPhoto')?.files[0];
     const value = parseFloat(document.getElementById('tmReading').value);
     let ok = true;
 
-    if (!file){ showFieldError('tmPhotoErr', t('form.needPhoto')); ok = false; }
+    // Only insist on a photo when one can actually be attached.
+    if (photoRequired && !file){ showFieldError('tmPhotoErr', t('form.needPhoto')); ok = false; }
     if (isNaN(value)){ showFieldError('tmReadingErr', t('form.needNumber')); ok = false; }
     else if (value < prev){
       showFieldError('tmReadingErr',
@@ -397,7 +463,7 @@ function openSendReadingModal(meterId){
     body.append('customer_reading', value);
     const note = document.getElementById('tmNote').value.trim();
     if (note) body.append('customer_note', note);
-    body.append('photo', file);
+    if (photoAllowed && file) body.append('photo', file);
 
     const btn = document.getElementById('tmSubmitBtn');
     const original = btn.innerHTML;

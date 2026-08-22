@@ -152,6 +152,17 @@ const dateFmt = (iso) => {
   return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
 };
 
+/* Date + time, for anything where "when exactly" matters (a submission
+   timestamp, an audit entry). Same en-IN style as dateFmt above. */
+const dateTimeFmt = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString('en-IN', {
+    day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit',
+  });
+};
+
 /* Format a Date for an <input type="date"> using its LOCAL calendar day.
    Deliberately not toISOString().slice(0,10): that converts to UTC first, so
    between midnight and 05:30 IST it yields yesterday's date and a box meant

@@ -10,32 +10,54 @@
 
 let _settingsCache = null;
 
-/* Admin-configured "Default bill due period (days)" (Settings -> Billing),
-   cached so opening the bill modal doesn't refetch the whole settings payload
-   every time. Read from /api/settings rather than /api/settings/public - the
-   public endpoint is a deliberately small allow-list for callers who aren't
-   signed in, and this is admin business config. null = not fetched yet;
-   cleared by invalidateSettingsCaches() whenever settings are saved or reset
-   so a change takes effect without a page reload. */
-let _billDueDaysCache = null;
+/* {key: value} for every setting, cached so screens that need one value
+   don't refetch the whole payload each time they open. Read from
+   /api/settings rather than /api/settings/public - the public endpoint is a
+   deliberately small allow-list for callers who aren't signed in, and these
+   are admin business config. null = not fetched yet; cleared by
+   invalidateSettingsCaches() whenever settings are saved or reset, so a
+   change takes effect without a page reload.
+
+   Note "secret"-typed values always arrive blank (the API never echoes them
+   back), so this map is only good for non-secret settings. */
+let _settingValuesCache = null;
+
+async function getSettingsMap(){
+  if (_settingValuesCache) return _settingValuesCache;
+  const data = await api('/api/settings');
+  const map = {};
+  (data.settings || []).forEach(s => { map[s.key] = s.value; });
+  _settingValuesCache = map;
+  return map;
+}
+
+/* One setting's value, or `fallback` if it isn't in the payload. */
+async function getSetting(key, fallback = undefined){
+  const map = await getSettingsMap();
+  return (key in map) ? map[key] : fallback;
+}
+
+/* Booleans default to TRUE when absent so a settings payload that predates a
+   newly added switch keeps the app behaving as it did before that switch
+   existed - the same "missing key means allowed" rule the API applies. */
+async function getSettingBool(key){
+  const value = await getSetting(key, true);
+  return value === undefined || value === null ? true : Boolean(value);
+}
 
 /* Throws if the value can't be read. Callers should treat that as "leave the
    due date blank and let the server apply the setting" rather than
    substituting a number of their own - a hardcoded default on this side is
    exactly what made this setting look broken before. */
 async function getBillDueDays(){
-  if (_billDueDaysCache !== null) return _billDueDaysCache;
-  const data = await api('/api/settings');
-  const row  = (data.settings || []).find(s => s.key === 'bill.due_days');
-  const days = Number(row && row.value);
+  const days = Number(await getSetting('bill.due_days'));
   if (!Number.isFinite(days)) throw new Error('bill.due_days missing from /api/settings');
-  _billDueDaysCache = days;
-  return _billDueDaysCache;
+  return days;
 }
 
 function invalidateSettingsCaches(){
-  _settingsCache    = null;
-  _billDueDaysCache = null;
+  _settingsCache      = null;
+  _settingValuesCache = null;
 }
 
 async function settingsView(){

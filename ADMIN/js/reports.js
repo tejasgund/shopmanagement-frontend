@@ -27,6 +27,7 @@ async function reportsView(){
     <button class="path-btn" data-rtab="deposit">Deposits</button>
     <button class="path-btn" data-rtab="occupancy">Occupancy</button>
     <button class="path-btn" data-rtab="user-wise">User-wise</button>
+    <button class="path-btn" data-rtab="missing-readings">Missing Readings</button>
   </div>
 
   <div class="card card-pad" style="margin-bottom:18px;">
@@ -205,6 +206,13 @@ async function generateReport(tab){
       document.getElementById('exportReportBtn').style.display = 'inline-flex';
       document.getElementById('exportReportBtn').onclick = () => exportReportPdf();
 
+    } else if (tab === 'missing-readings'){
+      // Owns its own date + Day/Month control rather than using the shared
+      // From/To range above: this report is about one point in time, not a
+      // span. Seeded from the "To" date so a range already picked carries
+      // over sensibly.
+      await renderMissingReadingsReport(end || todayIso(), 'month', complexId);
+
     } else if (tab === 'occupancy'){
       const params = new URLSearchParams();
       if (complexId) params.set('complex_id', complexId);
@@ -287,6 +295,123 @@ async function generateReport(tab){
   } finally {
     btn.disabled = false; btn.innerHTML = original;
   }
+}
+
+/* ================================================================
+   MISSING METER READINGS
+   Who hasn't sent a reading yet. Rows are per METER, not per tenant:
+   someone with two shops can easily have sent one and not the other.
+   "Submitted" means a reading exists - with or without a photo - so the
+   report keeps working when image upload is switched off.
+   ================================================================ */
+
+function todayIso(){
+  return toDateInputValue(new Date());
+}
+
+async function renderMissingReadingsReport(dateStr, scope, complexId){
+  const resultsEl = document.getElementById('reportResults');
+  const params = new URLSearchParams();
+  if (dateStr) params.set('date', dateStr);
+  params.set('scope', scope);
+  if (complexId) params.set('complex_id', complexId);
+
+  const rep = await api(`/api/reports/missing-meter-readings?${params}`);
+  state._lastReportData = { tab: 'missing-readings', rep, start: dateStr, end: dateStr, complexId };
+
+  const s = rep.summary;
+  const periodLabel = scope === 'day'
+    ? dateFmt(rep.date)
+    : new Date(rep.date).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+  resultsEl.innerHTML = `
+    <div class="card card-pad" style="margin-bottom:16px; display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="margin-bottom:0;">
+        <label for="mrDate">Date</label>
+        <input type="date" id="mrDate" value="${escapeHtml(rep.date)}">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Check</label>
+        <div class="path-toggle" id="mrScopeToggle" style="margin:0;">
+          <button class="path-btn ${scope==='month'?'active':''}" data-mr-scope="month">Whole month</button>
+          <button class="path-btn ${scope==='day'?'active':''}" data-mr-scope="day">That day only</button>
+        </div>
+      </div>
+      <div style="font-size:12.5px; color:var(--muted); max-width:340px;">
+        ${scope === 'month'
+          ? 'Shows anyone with no reading at all in this month — the usual monthly check.'
+          : 'Shows anyone with no reading on this exact date.'}
+      </div>
+    </div>
+
+    <div class="stat-row" style="margin-bottom:18px;">
+      <button type="button" data-mr-filter="all" class="card stat-card glance-card" style="text-align:left; cursor:pointer;">
+        <div class="label">Meters expected</div><div class="value">${s.total}</div></button>
+      <button type="button" data-mr-filter="not_submitted" class="card stat-card accent-rust glance-card" style="text-align:left; cursor:pointer;">
+        <div class="label">Not submitted</div><div class="value">${s.not_submitted}</div></button>
+      <button type="button" data-mr-filter="submitted" class="card stat-card accent-green glance-card" style="text-align:left; cursor:pointer;">
+        <div class="label">Submitted</div><div class="value">${s.submitted}</div></button>
+    </div>
+
+    <div class="card">
+      <div class="card-pad" style="padding-bottom:8px;">
+        <h3 style="font-size:15px; margin:0;">Meter readings — ${escapeHtml(periodLabel)}</h3>
+      </div>
+      <div class="table-wrap">
+        <table id="mrTable">
+          <thead><tr>
+            <th>${escapeHtml(L('tenant'))}</th><th>${escapeHtml(L('shop'))}</th><th>Meter</th>
+            <th>Reading date</th><th>Status</th><th>Submitted at</th>
+          </tr></thead>
+          <tbody>
+            ${rep.rows.length ? rep.rows.map(missingReadingRowHtml).join('')
+              : `<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:24px;">No active meters are assigned to a ${escapeHtml(L('shop').toLowerCase())} yet.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.getElementById('exportReportBtn').style.display = 'inline-flex';
+  document.getElementById('exportReportBtn').onclick = () => exportReportPdf();
+
+  // Re-fetch on either control; the server decides what counts as submitted
+  // so the two views can never drift apart.
+  document.getElementById('mrDate').addEventListener('change', (e) =>
+    renderMissingReadingsReport(e.target.value, scope, complexId));
+  document.querySelectorAll('[data-mr-scope]').forEach(btn =>
+    btn.addEventListener('click', () =>
+      renderMissingReadingsReport(document.getElementById('mrDate').value, btn.dataset.mrScope, complexId)));
+
+  // Client-side row filter — the summary above always describes the full
+  // period, so filtering here never changes the counts.
+  document.querySelectorAll('[data-mr-filter]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const want = btn.dataset.mrFilter;
+      document.querySelectorAll('#mrTable tbody tr[data-submitted]').forEach(tr => {
+        const isSub = tr.dataset.submitted === '1';
+        tr.style.display = (want === 'all' || (want === 'submitted') === isSub) ? '' : 'none';
+      });
+    }));
+}
+
+function missingReadingRowHtml(r){
+  const badge = r.submitted
+    ? `<span class="pill active-pill"><span class="pill-dot"></span>Submitted</span>`
+    : `<span class="pill inactive-pill"><span class="pill-dot"></span>Not Submitted</span>`;
+  // A reading that was later rejected still counts as submitted - flag the
+  // review state so the admin isn't misled into thinking it's all settled.
+  const reviewNote = r.submitted && r.reading_status && r.reading_status !== 'approved'
+    ? ` <span style="font-size:11px; color:var(--muted);">(${escapeHtml(r.reading_status)})</span>`
+    : '';
+  return `
+    <tr data-submitted="${r.submitted ? '1' : '0'}">
+      <td>${r.tenant_name ? escapeHtml(r.tenant_name) : '<span style="color:var(--muted);">— unassigned —</span>'}</td>
+      <td class="mono">${escapeHtml(r.shop_number || '—')}${r.complex_name ? `<div style="font-size:11.5px; color:var(--muted);">${escapeHtml(r.complex_name)}</div>` : ''}</td>
+      <td class="mono">${escapeHtml(r.meter_number || '—')}</td>
+      <td>${r.reading_date ? dateFmt(r.reading_date) : '<span style="color:var(--muted);">—</span>'}</td>
+      <td>${badge}${reviewNote}</td>
+      <td>${r.submitted_at ? dateTimeFmt(r.submitted_at) : '<span style="color:var(--muted);">—</span>'}</td>
+    </tr>`;
 }
 
 function renderReportHtml(rep, start, end){
@@ -746,6 +871,7 @@ function exportReportPdf(){
     'deposit': 'Deposit Report',
     'occupancy': 'Occupancy Report',
     'user-wise': 'User-wise Financial Report',
+    'missing-readings': 'Meter Readings — Submitted / Not Submitted',
   };
 
   doc.setFillColor(58, 54, 46);
@@ -873,6 +999,15 @@ function exportReportPdf(){
   } else if (tab === 'user-wise'){
     addTable(['Tenant', 'Billed', 'Collected', 'Pending', 'Deposit paid', 'Deposit rem.'],
       rep.map(r => [r.user_name, currency(r.total_billed), currency(r.total_collected), currency(r.total_pending), currency(r.deposit_paid), currency(r.deposit_remaining)]));
+
+  } else if (tab === 'missing-readings'){
+    addTable(['Tenant', 'Shop', 'Meter', 'Reading date', 'Status', 'Submitted at'],
+      rep.rows.map(r => [
+        r.tenant_name || '—', r.shop_number || '—', r.meter_number || '—',
+        r.reading_date ? dateFmt(r.reading_date) : '—',
+        r.status,
+        r.submitted_at ? dateTimeFmt(r.submitted_at) : '—',
+      ]));
   }
 
   const pageCount = doc.internal.getNumberOfPages();

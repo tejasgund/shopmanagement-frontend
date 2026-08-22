@@ -96,10 +96,21 @@ function attachCollectSubmeterHandlers(){
 /* ================================================================
    COLLECT — manual entry on the tenant's behalf
    ================================================================ */
-function openCollectReadingModal(meterId){
+async function openCollectReadingModal(meterId){
   const meter = (collectSubmeterState._meters || []).find(m => m.id === meterId);
   if (!meter) return;
   const prev = Number(meter.current_reading || 0);
+
+  /* "Allow admin to upload meter reading image" (Settings -> Meter readings).
+     Off hides the photo field only - the reading itself is collected exactly
+     as before. Independent of the tenant's own switch. The API enforces this
+     too; hiding the field just stops us offering something it would refuse.
+     If the setting can't be read we leave the field visible, matching the
+     API's "missing key means allowed" default. */
+  let photoAllowed = true;
+  try {
+    photoAllowed = await getSettingBool('meter.allow_admin_photo_upload');
+  } catch (err) { /* keep the existing field */ }
 
   openModal(`Collect reading — ${escapeHtml(meter.meter_number)}`, `
     <form id="collectForm">
@@ -115,13 +126,14 @@ function openCollectReadingModal(meterId){
         ${fieldErrorHtml('csReadingErr')}
       </div>
 
+      ${photoAllowed ? `
       <div class="field">
         <label for="csPhoto">Photo of the meter <span style="font-weight:400; color:var(--muted);">(optional, but recommended)</span></label>
         <input id="csPhoto" type="file" accept="image/*" capture="environment">
         <div id="csPreviewWrap" style="display:none; margin-top:8px;">
           <img id="csPreview" alt="Selected photo" style="max-width:100%; max-height:220px; border-radius:var(--radius-sm); border:1px solid var(--line);">
         </div>
-      </div>
+      </div>` : ''}
 
       <div class="field">
         <label for="csNote">Note <span style="font-weight:400; color:var(--muted);">(optional)</span></label>
@@ -139,7 +151,7 @@ function openCollectReadingModal(meterId){
   `);
 
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
-  document.getElementById('csPhoto').addEventListener('change', (e) => {
+  document.getElementById('csPhoto')?.addEventListener('change', (e) => {
     const file = e.target.files[0];
     const wrap = document.getElementById('csPreviewWrap');
     if (!file){ wrap.style.display = 'none'; return; }
@@ -160,7 +172,7 @@ function openCollectReadingModal(meterId){
     body.append('customer_reading', value);
     const note = document.getElementById('csNote').value.trim();
     if (note) body.append('customer_note', note);
-    const file = document.getElementById('csPhoto').files[0];
+    const file = document.getElementById('csPhoto')?.files[0];
     if (file) body.append('photo', file);
 
     await withSavingState('csSaveBtn', async () => {
