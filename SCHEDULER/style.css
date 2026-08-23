@@ -1,0 +1,86 @@
+/* ================================================================
+   SCHEDULER/style.css — layered on top of ADMIN/style.css so this
+   page inherits the same typography, buttons, pills and cards as
+   the rest of the product rather than inventing a second visual
+   language. Only what is genuinely new to this screen lives here.
+   ================================================================ */
+
+.sch-shell { max-width: 1240px; margin: 0 auto; padding: 22px 20px 60px; }
+
+.sch-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+}
+.sch-brand { display: flex; align-items: center; gap: 12px; }
+.sch-mark {
+  width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--ink, #3A362E); color: #fff; font-weight: 700; font-size: 18px;
+}
+.sch-title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.sch-sub { font-size: 12.5px; color: var(--muted); }
+.sch-top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sch-auto { font-size: 11.5px; color: var(--muted); }
+
+/* ── status strip ── */
+.sch-status-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.sch-stat {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 13px 15px;
+}
+.sch-stat .label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600; margin-bottom: 5px;
+}
+.sch-stat .value { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.sch-stat .sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.sch-stat.is-bad  { border-color: var(--danger); background: var(--danger-soft); }
+.sch-stat.is-good { border-color: var(--success); background: var(--success-soft); }
+.sch-stat.is-warn { border-color: var(--rust); background: var(--rust-soft); }
+
+.sch-tabs { margin-bottom: 18px; flex-wrap: wrap; }
+.sch-loading { padding: 40px; text-align: center; color: var(--muted); }
+
+/* ── task rows ── */
+.sch-task {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 13px 15px; margin-bottom: 9px;
+  display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start;
+}
+.sch-task-name { font-weight: 650; font-size: 14px; }
+.sch-task-meta { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.55; }
+.sch-task-right { text-align: right; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+
+/* Status colours reuse the app's tokens so a FAILED here reads the same as
+   an overdue bill elsewhere. */
+.sch-badge {
+  display: inline-block; padding: 2.5px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+}
+.sch-badge.PENDING   { background: var(--paper); color: var(--muted); }
+.sch-badge.RUNNING   { background: var(--partial-soft); color: var(--partial); }
+.sch-badge.COMPLETED { background: var(--success-soft); color: var(--success); }
+.sch-badge.FAILED    { background: var(--danger-soft);  color: var(--danger); }
+.sch-badge.SKIPPED   { background: var(--paper); color: var(--muted); }
+.sch-badge.MISSED    { background: var(--rust-soft); color: var(--rust); }
+
+.sch-error {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; background: var(--danger-soft); color: var(--danger);
+  border-radius: 6px; padding: 8px 10px; margin-top: 8px;
+  white-space: pre-wrap; word-break: break-word; max-height: 130px; overflow: auto;
+}
+
+.sch-empty { padding: 34px; text-align: center; color: var(--muted); font-size: 13.5px; }
+.sch-section-title { font-size: 14.5px; font-weight: 700; margin: 22px 0 10px; }
+.sch-section-title:first-child { margin-top: 0; }
+
+/* A running task's elapsed time, so a stuck job is obvious at a glance. */
+.sch-elapsed { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+  .sch-task { grid-template-columns: 1fr; }
+  .sch-task-right { align-items: flex-start; text-align: left; }
+}
