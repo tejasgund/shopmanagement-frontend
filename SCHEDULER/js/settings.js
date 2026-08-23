@@ -1,27 +1,22 @@
 /* ================================================================
    SCHEDULER/js/settings.js — the Scheduler Settings tab.
 
-   Reads and writes the ordinary settings API, so these values live in
-   the database with every other setting rather than in a config file
-   or in this page. The fields are declared here (unlike the task
-   lists, which are discovered from the server) because each one needs
-   its own wording and units — but the VALUES are always the server's.
+   These belong to THIS app. They are stored in the same database
+   table as every other setting — one settings mechanism, one
+   validation path, one audit trail — but they are served by this
+   app's own endpoints, and the main admin Settings screen can
+   neither see nor change them. The API refuses the crossover in
+   both directions, so the separation does not depend on this page
+   behaving itself.
+
+   The field list comes from the server's schema, so a scheduler
+   setting added in the backend appears here with no change to this
+   file — same rule as the task lists.
    ================================================================ */
 
-const SCHEDULER_SETTING_KEYS = [
-  'scheduler.enabled',
-  'scheduler.rent_generation_enabled',
-  'scheduler.penalty_enabled',
-  'scheduler.penalty_percent_per_day',
-  'scheduler.penalty_grace_days',
-  'scheduler.penalty_max_amount',
-  'scheduler.backfill_days',
-  'scheduler.lookahead_days',
-];
-
 async function renderSettingsTab(body){
-  const data = await api('/api/settings');
-  const rows = (data.settings || []).filter(s => SCHEDULER_SETTING_KEYS.includes(s.key));
+  const data = await api('/api/scheduler/settings');
+  const rows = data.settings || [];
 
   const field = (s) => {
     const id = `set_${s.key.replace(/\./g, '_')}`;
@@ -45,14 +40,19 @@ async function renderSettingsTab(body){
       </div>`;
   };
 
-  const group = (title, keys) => `
+  /* Switches first, then everything else, so the on/off controls an admin
+     came here for are at the top. Anything the server adds later that is
+     neither of those still renders - it simply lands in "Other". */
+  const switches = rows.filter(r => r.type === 'bool');
+  const numbers  = rows.filter(r => r.type !== 'bool');
+
+  const group = (title, items) => items.length ? `
     <div class="sch-section-title">${escapeHtml(title)}</div>
-    ${rows.filter(r => keys.includes(r.key)).map(field).join('')}`;
+    ${items.map(field).join('')}` : '';
 
   body.innerHTML = `
-    ${group('Switches', ['scheduler.enabled', 'scheduler.rent_generation_enabled', 'scheduler.penalty_enabled'])}
-    ${group('Penalty rules', ['scheduler.penalty_percent_per_day', 'scheduler.penalty_grace_days', 'scheduler.penalty_max_amount'])}
-    ${group('Recovery windows', ['scheduler.backfill_days', 'scheduler.lookahead_days'])}
+    ${group('Switches', switches)}
+    ${group('Rules and windows', numbers)}
     <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;">
       <button class="btn btn-primary" id="schSaveSettings">Save settings</button>
     </div>`;
@@ -72,7 +72,7 @@ async function renderSettingsTab(body){
     const original = btn.textContent;
     btn.textContent = 'Saving…';
     try {
-      const res = await api('/api/settings', { method: 'PUT', body: { values } });
+      const res = await api('/api/scheduler/settings', { method: 'PUT', body: { values } });
       showToast(res.message, 'success');
       // The status strip shows the master switch, so it has to follow a save
       // immediately rather than waiting for the next poll.
