@@ -64,6 +64,19 @@ function lateFeeChipHtml(b){
              >late fee · bill #${b.parent_bill_id}</a>`;
 }
 
+/* ================================================================
+   ICONS
+
+   Restored verbatim after being removed by accident: they sat between
+   two other blocks and went with the wrong one during an edit. Losing
+   rupeeIcon() threw "rupeeIcon is not defined" while rendering any
+   unpaid bill row, which took the whole Finance section down with it -
+   the bill list, edit/delete and the monthly view all render through
+   that same row template.
+   ================================================================ */
+function rupeeIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3c3 0 5-1.5 5-5"/></svg>`; }
+function calendarIcon(){ return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`; }
+
 function billingEnrichedData(){
   const bills = state.cache.bills || [];
   const payments = state.cache.payments || [];
@@ -283,11 +296,14 @@ function billingAddSectionHtml(){
       <div class="billing-add-title">Record payment</div>
       <div class="billing-add-sub">Log money received — auto-allocate across the tenant's oldest dues, or apply to one bill.</div>
     </button>
-    <button type="button" class="card billing-add-card" data-add-action="rent-bills">
-      <div class="billing-add-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div>
-      <div class="billing-add-title">Generate rent bills</div>
-      <div class="billing-add-sub">Run the monthly rent generator for every tenant with auto-billing turned on.</div>
-    </button>
+    <!-- "Generate rent bills" removed: rent generation is the cron job's
+         responsibility and only its, so exactly one thing decides when a
+         bill is raised. See the Scheduler screen for what it did and when. -->
+    <a class="card billing-add-card" href="../SCHEDULER/index.html">
+      <div class="billing-add-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      <div class="billing-add-title">Scheduler</div>
+      <div class="billing-add-sub">Rent bills are raised automatically every night. See what ran, for which tenants, and any late fees applied.</div>
+    </a>
   </div>`;
 }
 
@@ -296,7 +312,6 @@ function attachBillingAddHandlers(){
     const action = btn.dataset.addAction;
     if (action === 'bill') openBillModal();
     else if (action === 'payment') openPaymentModal();
-    else if (action === 'rent-bills') openGenerateRentBillsModal();
   }));
 }
 
@@ -1470,52 +1485,20 @@ function attachBillingResultHandlers(){
   }));
 }
 
-/* ---- Manual rent-bill generation trigger ---- */
-function openGenerateRentBillsModal(){
-  const todayStr = new Date().toISOString().slice(0,10);
-  openModal('Generate rent bills', `
-    <div style="font-size:12.5px; color:var(--muted); margin-bottom:14px;">
-      Auto-generates this month's Rent bill — one per assigned shop — for every active tenant with auto-billing enabled whose rent bill date matches the day picked below. This is the same job that runs automatically every night at 02:00 (Asia/Kolkata); it's safe to re-run since already-generated bills for a matching month are skipped, never duplicated.
-    </div>
-    <div class="field">
-      <label for="grbDate">Date to generate for</label>
-      <input type="date" id="grbDate" value="${todayStr}">
-    </div>
-    <div id="grbResult"></div>
-  `, `
-    <button class="btn btn-ghost" id="cancelBtn">Close</button>
-    <button class="btn btn-primary" id="runBtn">Generate</button>
-  `);
-  document.getElementById('cancelBtn').addEventListener('click', closeModal);
-  document.getElementById('runBtn').addEventListener('click', async () => {
-    const date = document.getElementById('grbDate').value;
-    const btn = document.getElementById('runBtn');
-    const original = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Generating…`;
-    try {
-      const res = await api(`/api/bills/generate-rent${date ? `?date=${date}` : ''}`, { method:'POST' });
-      const createdCount = res.created?.length || 0;
-      document.getElementById('grbResult').innerHTML = `
-        <div class="info-card" style="margin-top:14px;">
-          <div class="info-row"><span class="info-label">Users matched</span><span class="info-val">${res.users_matched}</span></div>
-          <div class="info-row"><span class="info-label">Bills created</span><span class="info-val good">${createdCount}</span></div>
-          <div class="info-row"><span class="info-label">Skipped — already generated</span><span class="info-val">${res.skipped_existing}</span></div>
-          <div class="info-row"><span class="info-label">Skipped — zero rent</span><span class="info-val">${res.skipped_zero_rent}</span></div>
-          <div class="info-row"><span class="info-label">Skipped — no shops assigned</span><span class="info-val">${res.skipped_no_shops}</span></div>
-        </div>
-      `;
-      state.loaded.bills = false;
-      showToast(`${createdCount} rent bill${createdCount !== 1 ? 's' : ''} generated`, 'success');
-      if (state.view === 'billing') await renderView('billing');
-    } catch(err) {
-      showToast(err.message || 'Something went wrong', 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = original;
-    }
-  });
-}
+/* ---- Manual rent-bill generation ----
+
+   Removed on purpose. Rent generation is cron's job and only cron's, so
+   there is exactly one thing that decides when a bill is raised - the
+   endpoint this used to call (POST /api/bills/generate-rent) no longer
+   exists, and the button was returning 404.
+
+   To raise a rent bill by hand, use "Add bill" and pick type Rent; the
+   database refuses a second Rent bill for the same tenant, shop and month,
+   so it cannot collide with the nightly run.
+
+   To run the nightly job early, run the script:
+     cd scheduler/auto_rent_generation && python3 auto_rent_generation.py
+   ---- */
 
 /* ---- Edit / delete a single bill ---- */
 function openEditBillModal(billId){
