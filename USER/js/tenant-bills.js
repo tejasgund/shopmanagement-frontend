@@ -54,14 +54,19 @@ function groupBillsByMonth(bills){
     const label = isNaN(d) ? '—' : monthYearFmt(d);
 
     if (!byKey[key]){
-      byKey[key] = { key, label, bills: [], billed: 0, paid: 0, pending: 0 };
+      byKey[key] = { key, label, bills: [], billed: 0, paid: 0, pending: 0, fees: 0 };
       groups.push(byKey[key]);
     }
     const g = byKey[key];
     g.bills.push(b);
-    g.billed  += Number(b.amount || 0);
+    // Billed counts what is OWED, not what was originally raised: with a late
+    // fee applied, summing `amount` here would print "Billed 10,000 ... Left
+    // 23,200" on the same line, and the tenant would be right to distrust it.
+    // billed - paid = left, always.
+    g.billed  += billPenalty(b).totalPayable;
     g.paid    += Number(b.paid_amount || 0);
     g.pending += Number(b.pending_amount || 0);
+    g.fees    += billPenalty(b).amount;
   });
 
   return groups;
@@ -83,6 +88,7 @@ function monthBlockHtml(g){
 
     <div class="tp-month-legend">
       <span>${t('bills.billed')} <strong>${currency(g.billed)}</strong></span>
+      ${g.fees > 0.004 ? `<span class="tp-warn">${t('bill.lateFee')} <strong>${currency(g.fees)}</strong></span>` : ''}
       <span>${t('home.paidLabel')} <strong>${currency(g.paid)}</strong></span>
       ${!settled ? `<span class="tp-red">${t('bills.stillLeft')} <strong>${currency(g.pending)}</strong></span>` : ''}
     </div>
@@ -91,6 +97,29 @@ function monthBlockHtml(g){
       ${g.bills.map(billCardHtml).join('')}
     </div>
   </div>`;
+}
+
+/* ================================================================
+   LATE FEE
+
+   The API sends a `penalty` block on every bill (see
+   routers/tenant_portal.py). It may be absent on a payload cached by an
+   older version of this app, so every read goes through here rather than
+   reaching into b.penalty directly - a missing block must mean "no late
+   fee", never a crash on a screen someone is trying to pay from.
+   ================================================================ */
+function billPenalty(b){
+  const p = (b && b.penalty) || {};
+  const amount = Number(p.penalty_amount || 0);
+  return {
+    amount,
+    days: Number(p.penalty_days || 0),
+    daysOverdue: Number(p.days_overdue || 0),
+    // Trust the server's own flag when it is there; fall back to the figure.
+    has: p.has_penalty !== undefined ? !!p.has_penalty : amount > 0.004,
+    totalPayable: Number(p.total_payable != null ? p.total_payable
+                                                 : Number(b.amount || 0) + amount),
+  };
 }
 
 function billCardHtml(b){
@@ -104,6 +133,7 @@ function billCardHtml(b){
   else { state = t('state.notPaid'); stateClass = 'unpaid'; }
 
   const isLate = pending > 0.004 && b.due_date && new Date(b.due_date) < startOfToday();
+  const pen = billPenalty(b);
 
   return `
   <button type="button" class="tp-bill ${isLate ? 'is-late' : ''}" data-bill-id="${b.id}">
@@ -127,6 +157,12 @@ function billCardHtml(b){
       </div>` : ''}
     </div>
 
+    ${pen.has && pending > 0.004 ? `
+    <div class="tp-bill-fee">
+      <span>${t('bill.lateFee')}</span>
+      <strong>+${currency(pen.amount)}</strong>
+    </div>` : ''}
+
     ${isLate
       ? `<div class="tp-bill-foot tp-bill-late">${t('bill.wasDue')} ${dateFmt(b.due_date)}</div>`
       : (pending > 0.004 && b.due_date
@@ -141,6 +177,7 @@ function openBillSheet(billId){
 
   const pending = Number(b.pending_amount || 0);
   const paid = Number(b.paid_amount || 0);
+  const pen = billPenalty(b);
 
   const forThisBill = tp.payments.filter(p => p.bill_id === b.id)
     .sort((a, c) => new Date(c.payment_date) - new Date(a.payment_date));
@@ -149,14 +186,29 @@ function openBillSheet(billId){
     <div class="tp-sheet">
       <div class="tp-sheet-hero ${pending > 0.004 ? '' : 'is-paid'}">
         <div class="tp-sheet-hero-label">${pending > 0.004 ? t('bill.leftToPay') : t('bill.fullyPaid')}</div>
-        <div class="tp-sheet-hero-value">${currency(pending > 0.004 ? pending : Number(b.amount || 0))}</div>
+        <div class="tp-sheet-hero-value">${currency(pending > 0.004 ? pending : pen.totalPayable)}</div>
       </div>
 
       ${pending > 0.004 ? payOnlineSectionHtml(b, pending) : ''}
 
-      ${progressBarHtml(paid, Number(b.amount || 0))}
+      ${progressBarHtml(paid, pen.totalPayable)}
 
-      <div class="tp-kv"><span>${t('bill.amount')}</span><strong>${currency(b.amount)}</strong></div>
+      ${pen.has ? `
+      <!-- The whole point of this block: a tenant seeing a figure larger than
+           their rent must be able to read WHY without phoning anyone. Original
+           bill, the fee, the day count, and the two added up. -->
+      <div class="tp-fee-box">
+        <div class="tp-kv"><span>${t('bill.originalBill')}</span><strong>${currency(b.amount)}</strong></div>
+        <div class="tp-kv tp-fee-row">
+          <span>${t('bill.lateFee')}${pen.days > 0 ? ` · ${pen.days} ${t('bill.lateFeeDays')}` : ''}</span>
+          <strong class="tp-red">+${currency(pen.amount)}</strong>
+        </div>
+        <div class="tp-kv tp-fee-total">
+          <span>${t('bill.totalToPay')}</span><strong>${currency(pen.totalPayable)}</strong>
+        </div>
+      </div>
+      <div class="tp-fee-why">${t('bill.lateFeeWhy')} ${t('bill.lateFeeAsk')}</div>`
+      : `<div class="tp-kv"><span>${t('bill.amount')}</span><strong>${currency(b.amount)}</strong></div>`}
       <div class="tp-kv"><span>${t('bill.youPaid')}</span><strong>${currency(paid)}</strong></div>
       ${pending > 0.004 ? `<div class="tp-kv"><span>${t('bill.leftToPay')}</span><strong class="tp-red">${currency(pending)}</strong></div>` : ''}
       <div class="tp-kv"><span>${t('bill.date')}</span><strong>${dateFmt(b.bill_date)}</strong></div>

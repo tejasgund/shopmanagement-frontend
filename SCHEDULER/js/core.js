@@ -20,6 +20,7 @@ const sch = {
     reports: { granularity: 'daily', scheduler: '' },
   },
   openRunId: null,           // when set, the Runs tab shows one run in detail
+  billId: null,              // when set (#bill-123), one bill's history replaces the tabs
   timer: null,
 };
 

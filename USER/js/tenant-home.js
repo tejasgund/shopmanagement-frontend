@@ -37,6 +37,15 @@ function homeAmountCardHtml(due, unpaid, overdue, next){
   const overdueTotal = overdue.reduce((s, b) => s + Number(b.pending_amount || 0), 0);
   const isLate = overdue.length > 0;
 
+  // The big number already includes late fees, because pending_amount does.
+  // Saying so under it is the difference between a tenant trusting the figure
+  // and ringing the office about it.
+  const feeTotal = unpaid.reduce(
+    (sum, b) => sum + Number((b.penalty && b.penalty.penalty_amount) || 0), 0);
+  const feeLine = feeTotal > 0.004
+    ? `<div class="tp-fee-note">${t('home.includesLateFee')} <strong>${currency(feeTotal)}</strong></div>`
+    : '';
+
   let whenLine;
   if (isLate){
     const worst = [...overdue].sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0];
@@ -64,6 +73,7 @@ function homeAmountCardHtml(due, unpaid, overdue, next){
     <div class="tp-amount-card ${isLate ? 'tp-late' : ''}">
       <div class="tp-amount-label">${t('home.youOwe')}</div>
       <div class="tp-amount-value">${currency(due)}</div>
+      ${feeLine}
       ${whenLine}
       ${(tp.publicSettings && tp.publicSettings.razorpay_enabled) ? `
       <button class="tp-btn tp-btn-white tp-btn-block" id="tpHomePayCta">${t('pay.payBill')}</button>` : ''}

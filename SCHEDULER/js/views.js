@@ -419,6 +419,83 @@ async function renderReports(){
 }
 
 
+
+/* ══════════════════════════════════════════════════════════════
+   ONE BILL'S HISTORY
+
+   Reached as SCHEDULER/index.html#bill-123 - the link the admin bill
+   list puts on every late fee. Answers the question that link is
+   clicked to ask: where did this figure come from, and on whose
+   authority. The bill's current numbers sit above the runs that
+   produced them, so the two can be read against each other rather
+   than trusted separately.
+   ══════════════════════════════════════════════════════════════ */
+
+async function renderBillHistory(billId){
+  const body = document.getElementById('schBody');
+  let data;
+  try {
+    data = await api(`/api/scheduler/bills/${encodeURIComponent(billId)}`);
+  } catch (err) {
+    body.innerHTML = `
+      <button class="btn btn-ghost btn-sm" id="schBillBack">← Back</button>
+      ${emptyState(err.status === 404
+        ? `No bill #${billId} exists.`
+        : err.message)}`;
+    document.getElementById('schBillBack').addEventListener('click', clearBillView);
+    return;
+  }
+
+  const b = data.bill;
+  const fee = Number(b.penalty_amount || 0);
+
+  body.innerHTML = `
+    <button class="btn btn-ghost btn-sm" id="schBillBack">← Back</button>
+
+    <div class="sch-detail-head">
+      <div>
+        <div class="sch-task-name">
+          Bill #${b.id} · ${escapeHtml(b.bill_type)}
+          ${b.status ? `<span class="sch-chip tone-muted">${escapeHtml(b.status)}</span>` : ''}
+        </div>
+        <div class="sch-task-meta">
+          ${escapeHtml(b.user_name || `tenant #${b.user_id}`)}
+          ${b.shop_number ? ` · shop ${escapeHtml(b.shop_number)}` : ''}
+          ${b.rent_period ? ` · ${escapeHtml(b.rent_period)}` : ''}<br>
+          Raised ${dateFmt(b.bill_date)}${b.due_date ? ` · due ${dateFmt(b.due_date)}` : ''}
+          ${b.penalty_charged_through ? ` · penalty calculated to ${dateFmt(b.penalty_charged_through)}` : ''}
+        </div>
+      </div>
+      <div class="sch-task-right">
+        <div class="sch-amount-big">${amountFmt(Number(b.amount || 0) + fee)}</div>
+        <div class="sch-task-meta">
+          ${amountFmt(b.amount)} bill
+          ${fee > 0 ? ` + ${amountFmt(fee)} late fee (${b.penalty_days || 0} day(s))` : ''}<br>
+          ${amountFmt(b.paid_amount)} paid · ${amountFmt(b.pending_amount)} outstanding
+        </div>
+      </div>
+    </div>
+
+    <div class="sch-section-title">What the schedulers did to this bill</div>
+    ${data.history.length
+      ? data.history.map(itemRow).join('')
+      : emptyState('No scheduler has touched this bill. Its figures were set by hand.')}`;
+
+  document.getElementById('schBillBack').addEventListener('click', clearBillView);
+}
+
+function clearBillView(){
+  sch.billId = null;
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  switchTab('overview');
+}
+
+/* #bill-123 -> 123, anything else -> null. */
+function billIdFromHash(){
+  const match = /^#bill-(\d+)$/.exec(location.hash || '');
+  return match ? match[1] : null;
+}
+
 /* ══════════════════════════════════════════════════════════════
    FILTER WIRING  (shared by every tab that has filters)
    ══════════════════════════════════════════════════════════════ */
@@ -457,6 +534,9 @@ const TABS = {
 };
 
 async function renderTab(tab){
+  // A #bill-N link wins over whichever tab is selected: someone arriving from
+  // the admin bill list came to see that bill, not the last tab they used.
+  if (sch.billId) return renderBillHistory(sch.billId);
   const render = TABS[tab];
   if (!render) return;
   await render();

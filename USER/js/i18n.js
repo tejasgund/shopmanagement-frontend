@@ -113,6 +113,28 @@ const STRINGS = {
   'bill.dueDate':    { mr: 'भरायची तारीख',     en: 'Pay by' },
   'bill.number':     { mr: 'बिल क्रमांक',      en: 'Bill number' },
   'bill.wasDue':     { mr: 'ही तारीख होती',    en: 'Was due' },
+
+  /* ---- late fee ----
+     Wording rule: a tenant reading this is about to pay money they did not
+     expect. It has to say what the extra is, why it is there, and that it
+     stops when they pay - in the same plain Marathi as the rest, no
+     accounting vocabulary ("दंड" is the everyday word; "व्याज" would read as
+     interest, which this is not). */
+  'bill.lateFee':      { mr: 'उशिराचा दंड',      en: 'Late fee' },
+  // Reads after the day count: "132 दिवस" / "132 days". Deliberately not
+  // "दिवसांचा दंड" - it follows "उशिराचा दंड", and saying दंड twice in one
+  // line reads as two separate charges.
+  'bill.lateFeeDays':  { mr: 'दिवस',             en: 'days' },
+  'bill.originalBill': { mr: 'मूळ बिल',          en: 'Original bill' },
+  'bill.totalToPay':   { mr: 'एकूण भरायचे',      en: 'Total to pay' },
+  'bill.includesLateFee': { mr: 'यात उशिराचा दंड धरला आहे',
+                            en: 'includes a late fee' },
+  'bill.lateFeeWhy':   { mr: 'भरायची तारीख उलटल्यावर दररोज थोडा दंड लागतो. बिल भरले की दंड वाढायचा थांबतो.',
+                         en: 'A small late fee is added each day after the pay-by date. It stops growing as soon as the bill is paid.' },
+  'bill.lateFeeAsk':   { mr: 'शंका असेल तर ऑफिसला विचारा.',
+                         en: 'Ask the office if this looks wrong.' },
+  'home.includesLateFee': { mr: 'यात उशिराचा दंड धरला आहे',
+                            en: 'includes late fees of' },
   'bill.fullyPaid':  { mr: 'पूर्ण भरले',       en: 'Fully paid' },
   'bill.paidInFull': { mr: 'पूर्ण भरले',       en: 'paid in full' },
   'bill.stillToPay': { mr: 'भरायचे बाकी',      en: 'still to pay' },

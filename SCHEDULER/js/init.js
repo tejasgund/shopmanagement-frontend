@@ -8,10 +8,24 @@
       // Leaving the Runs tab closes any open run detail, so coming back to
       // it shows the list rather than whatever was last drilled into.
       if (btn.dataset.tab !== 'runs') sch.openRunId = null;
+      // Picking a tab leaves the deep-linked bill view.
+      sch.billId = null;
+      if (location.hash) history.replaceState(null, '', location.pathname);
       switchTab(btn.dataset.tab);
     }));
 
   document.getElementById('schRefreshBtn').addEventListener('click', refreshAll);
+
+  /* Deep link: SCHEDULER/index.html#bill-123 opens that bill's history. This
+     is the target of the "late fee" link on every bill in the admin list, so
+     "where did this figure come from" is one click from where it is noticed.
+     Handled on load AND on hashchange, since arriving at the page and
+     following a second link from it are the same request. */
+  sch.billId = billIdFromHash();
+  window.addEventListener('hashchange', () => {
+    sch.billId = billIdFromHash();
+    renderTab(sch.tab).catch(err => showToast(err.message, 'error'));
+  });
 
   await refreshAll();
 

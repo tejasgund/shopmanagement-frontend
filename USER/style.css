@@ -734,3 +734,51 @@ input,textarea,select{ font-family:inherit; font-size:16px; }  /* 16px stops iOS
   display:flex; align-items:baseline; justify-content:space-between; gap:12px;
   padding:12px 0; border-top:1px solid var(--line);
 }
+
+/* ================================================================
+   LATE FEE
+
+   A tenant looking at a figure larger than their rent needs the
+   reason on the same screen, not a phone call. These styles carry
+   that explanation: visible enough to be read, calm enough not to
+   feel like an accusation.
+   ================================================================ */
+
+/* On the bill card: one line, so the bigger figure above it is explained
+   at a glance without opening the bill. */
+.tp-bill-fee {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed var(--tp-line, #e4ddd2);
+  font-size: 13px; color: var(--tp-muted, #6b6457);
+}
+.tp-bill-fee strong { font-weight: 700; color: var(--tp-red, #b3261e); }
+
+/* In the bill sheet: original + fee + total, boxed together so the three
+   figures are read as one sum rather than three separate facts. */
+.tp-fee-box {
+  border: 1px solid var(--tp-line, #e4ddd2);
+  border-radius: 12px; padding: 4px 12px; margin: 10px 0 8px;
+  background: var(--tp-paper, #faf7f2);
+}
+.tp-fee-box .tp-kv { border-bottom: none; }
+.tp-fee-row { border-top: 1px dashed var(--tp-line, #e4ddd2) !important; }
+.tp-fee-total {
+  border-top: 2px solid var(--tp-line, #e4ddd2) !important;
+  font-size: 15px;
+}
+.tp-fee-total strong { font-size: 17px; font-weight: 800; }
+
+/* Why it is there, and that paying stops it. Deliberately not styled as a
+   warning: the fee is already shown in red above, and repeating the alarm
+   would read as scolding someone who is in the middle of paying. */
+.tp-fee-why {
+  font-size: 12.5px; line-height: 1.65; color: var(--tp-muted, #6b6457);
+  padding: 2px 2px 10px;
+}
+
+/* Under the big "you need to pay" number on the home tab. */
+.tp-fee-note {
+  font-size: 13px; margin-top: 4px; opacity: .92;
+}
+.tp-fee-note strong { font-weight: 700; }
