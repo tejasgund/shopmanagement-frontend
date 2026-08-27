@@ -1,87 +1,108 @@
 /* ================================================================
-   SCHEDULER/js/settings.js — the Scheduler Settings tab.
+   SCHEDULER/js/settings.js — the switches the two cron scripts obey.
 
-   These belong to THIS app. They are stored in the same database
-   table as every other setting — one settings mechanism, one
-   validation path, one audit trail — but they are served by this
-   app's own endpoints, and the main admin Settings screen can
-   neither see nor change them. The API refuses the crossover in
-   both directions, so the separation does not depend on this page
-   behaving itself.
+   These live in the database, not in the scripts, so the penalty rate
+   can be changed here rather than by editing Python on the server.
+   The scripts read them fresh on every run: a change takes effect on
+   the next one, with nothing to restart and no crontab to edit.
 
-   The field list comes from the server's schema, so a scheduler
-   setting added in the backend appears here with no change to this
-   file — same rule as the task lists.
+   The form is built from the schema the API returns, so a setting
+   added in the backend appears here with no change to this file.
    ================================================================ */
 
-async function renderSettingsTab(body){
+async function renderSettings(){
+  const body = document.getElementById('schBody');
   const data = await api('/api/scheduler/settings');
-  const rows = data.settings || [];
-
-  const field = (s) => {
-    const id = `set_${s.key.replace(/\./g, '_')}`;
-    if (s.type === 'bool'){
-      return `
-      <div class="sch-task" style="display:block;">
-        <label class="checkbox-row" style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-          <input type="checkbox" id="${id}" data-key="${s.key}" data-type="bool" ${s.value ? 'checked' : ''}>
-          <span class="sch-task-name">${escapeHtml(s.label)}</span>
-        </label>
-        <div class="sch-task-meta" style="margin-top:6px;">${escapeHtml(s.help)}</div>
-      </div>`;
-    }
-    const step = s.type === 'float' ? '0.1' : '1';
-    return `
-      <div class="sch-task" style="display:block;">
-        <label for="${id}" class="sch-task-name" style="display:block; margin-bottom:6px;">${escapeHtml(s.label)}</label>
-        <input id="${id}" type="number" step="${step}" data-key="${s.key}" data-type="${s.type}"
-               value="${escapeHtml(String(s.value ?? ''))}" style="max-width:220px;">
-        <div class="sch-task-meta" style="margin-top:6px;">${escapeHtml(s.help)}</div>
-      </div>`;
-  };
-
-  /* Switches first, then everything else, so the on/off controls an admin
-     came here for are at the top. Anything the server adds later that is
-     neither of those still renders - it simply lands in "Other". */
-  const switches = rows.filter(r => r.type === 'bool');
-  const numbers  = rows.filter(r => r.type !== 'bool');
-
-  const group = (title, items) => items.length ? `
-    <div class="sch-section-title">${escapeHtml(title)}</div>
-    ${items.map(field).join('')}` : '';
 
   body.innerHTML = `
-    ${group('Switches', switches)}
-    ${group('Rules and windows', numbers)}
-    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;">
-      <button class="btn btn-primary" id="schSaveSettings">Save settings</button>
-    </div>`;
+    <div class="sch-note">
+      Read by <code>auto_rent_generation.py</code> and
+      <code>due_bill_penalty.py</code> at the start of every run. A change
+      here applies to the next run — there is nothing to restart.
+    </div>
 
-  document.getElementById('schSaveSettings').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
+    <form id="schSettingsForm" class="sch-settings">
+      ${data.settings.map(settingField).join('')}
+      <div class="sch-settings-actions">
+        <button type="submit" class="btn btn-primary">Save settings</button>
+        <button type="button" class="btn btn-ghost" id="schSettingsReset">Discard changes</button>
+      </div>
+    </form>`;
+
+  document.getElementById('schSettingsForm')
+    .addEventListener('submit', (e) => saveSettings(e, data.settings));
+  document.getElementById('schSettingsReset')
+    .addEventListener('click', () => renderTab('settings'));
+
+  // Turning the penalty on is the one setting here that starts charging
+  // people money, so it says so at the moment it is switched.
+  const penaltyToggle = document.querySelector('[data-key="scheduler.penalty_enabled"]');
+  if (penaltyToggle) {
+    penaltyToggle.addEventListener('change', () => {
+      if (penaltyToggle.checked) {
+        showToast('Penalties will start accruing on overdue bills from the next run.',
+                  'default');
+      }
+    });
+  }
+}
+
+function settingField(item){
+  const id = `set_${item.key.replace(/\./g, '_')}`;
+  const common = `id="${id}" data-key="${escapeHtml(item.key)}" data-type="${escapeHtml(item.type)}"`;
+
+  const control = item.type === 'bool'
+    ? `<label class="sch-switch">
+         <input type="checkbox" ${common} ${item.value ? 'checked' : ''}>
+         <span>${item.value ? 'On' : 'Off'}</span>
+       </label>`
+    : `<input type="number" step="${item.type === 'float' ? '0.01' : '1'}"
+              ${common} value="${escapeHtml(item.value)}">`;
+
+  return `
+    <div class="sch-setting">
+      <div class="sch-setting-label">
+        <label for="${id}">${escapeHtml(item.label)}</label>
+        <div class="sch-setting-help">${escapeHtml(item.help)}</div>
+        <div class="sch-setting-default">Default: ${escapeHtml(String(item.default))}</div>
+      </div>
+      <div class="sch-setting-control">${control}</div>
+    </div>`;
+}
+
+async function saveSettings(event, schema){
+  event.preventDefault();
+  const button = event.target.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Saving…';
+
+  try {
     const values = {};
-    document.querySelectorAll('[data-key]').forEach(el => {
-      const key = el.dataset.key;
-      if (el.dataset.type === 'bool') values[key] = el.checked;
-      else if (el.dataset.type === 'int') values[key] = parseInt(el.value, 10);
-      else if (el.dataset.type === 'float') values[key] = parseFloat(el.value);
-      else values[key] = el.value;
+    schema.forEach(item => {
+      const el = document.querySelector(`[data-key="${item.key}"]`);
+      if (!el) return;
+      if (item.type === 'bool')       values[item.key] = el.checked;
+      else if (item.type === 'int')   values[item.key] = parseInt(el.value, 10);
+      else                            values[item.key] = parseFloat(el.value);
     });
 
-    btn.disabled = true;
-    const original = btn.textContent;
-    btn.textContent = 'Saving…';
-    try {
-      const res = await api('/api/scheduler/settings', { method: 'PUT', body: { values } });
-      showToast(res.message, 'success');
-      // The status strip shows the master switch, so it has to follow a save
-      // immediately rather than waiting for the next poll.
-      await loadStatus();
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = original;
+    // A blank or non-numeric box would be sent as NaN and rejected by the
+    // server with a less helpful message than this one.
+    const bad = Object.entries(values).find(([, v]) => typeof v === 'number' && isNaN(v));
+    if (bad) {
+      showToast('Every number needs a value before saving.', 'error');
+      return;
     }
-  });
+
+    await api('/api/scheduler/settings', { method: 'PUT', body: { values } });
+    showToast('Saved. The next scheduler run will use these.', 'success');
+    await renderTab('settings');
+    await loadSummary();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
 }

@@ -59,12 +59,11 @@
   display: inline-block; padding: 2.5px 9px; border-radius: 999px;
   font-size: 11px; font-weight: 700; letter-spacing: .04em;
 }
-.sch-badge.PENDING   { background: var(--paper); color: var(--muted); }
-.sch-badge.RUNNING   { background: var(--partial-soft); color: var(--partial); }
-.sch-badge.COMPLETED { background: var(--success-soft); color: var(--success); }
-.sch-badge.FAILED    { background: var(--danger-soft);  color: var(--danger); }
-.sch-badge.SKIPPED   { background: var(--paper); color: var(--muted); }
-.sch-badge.MISSED    { background: var(--rust-soft); color: var(--rust); }
+.sch-badge.RUNNING { background: var(--partial-soft); color: var(--partial); }
+.sch-badge.SUCCESS { background: var(--success-soft); color: var(--success); }
+.sch-badge.PARTIAL { background: var(--rust-soft);    color: var(--rust); }
+.sch-badge.FAILED  { background: var(--danger-soft);  color: var(--danger); }
+.sch-badge.STALLED { background: var(--danger-soft);  color: var(--danger); }
 
 .sch-error {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -83,4 +82,123 @@
 @media (max-width: 640px) {
   .sch-task { grid-template-columns: 1fr; }
   .sch-task-right { align-items: flex-start; text-align: left; }
+}
+
+
+/* ================================================================
+   TRACKING VIEWS
+   Added when the scheduler became two standalone cron scripts and
+   this screen became a record of what they did, rather than a
+   control panel for a ledger it could drive.
+   ================================================================ */
+
+/* ── filter bars ── */
+.sch-filters {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 12px 14px; margin-bottom: 14px;
+}
+.sch-filters label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600;
+}
+.sch-filters select, .sch-filters input {
+  font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0;
+  color: var(--ink); padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: 7px; background: #fff;
+  min-width: 130px;
+}
+.sch-count { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+/* ── a run is clickable; say so before it is clicked ── */
+.sch-run-link { cursor: pointer; transition: border-color .12s, background .12s; }
+.sch-run-link:hover, .sch-run-link:focus-visible {
+  border-color: var(--ink, #3A362E); background: var(--paper);
+}
+.sch-run-link:focus-visible { outline: 2px solid var(--ink, #3A362E); outline-offset: 2px; }
+
+.sch-detail-head {
+  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 15px 17px; margin: 14px 0 12px;
+  display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start;
+}
+.sch-breakdown { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+
+/* ── the "why" line: the sentence the script wrote on the night ──
+   Given room to breathe rather than truncated, because it is the
+   whole reason this screen can answer a tenant's question. */
+.sch-reason {
+  font-size: 12.5px; line-height: 1.6; color: var(--ink);
+  background: var(--paper); border-left: 3px solid var(--line);
+  border-radius: 0 6px 6px 0; padding: 8px 11px; margin-top: 8px;
+}
+
+/* ── action chips ── */
+.sch-chip {
+  display: inline-block; padding: 2.5px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 650; white-space: nowrap;
+}
+.sch-chip.tone-good  { background: var(--success-soft); color: var(--success); }
+.sch-chip.tone-warn  { background: var(--rust-soft);    color: var(--rust); }
+.sch-chip.tone-bad   { background: var(--danger-soft);  color: var(--danger); }
+.sch-chip.tone-muted { background: var(--paper);        color: var(--muted); }
+
+/* ── money ── */
+.sch-amount { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sch-amount-big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+
+/* ── reports table ── */
+.sch-table {
+  width: 100%; border-collapse: collapse; background: #fff;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden;
+  font-size: 13px;
+}
+.sch-table th, .sch-table td { padding: 9px 13px; text-align: left; border-bottom: 1px solid var(--line); }
+.sch-table th {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600; background: var(--paper);
+}
+.sch-table td.num, .sch-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.sch-table tr:last-child td { border-bottom: none; }
+
+/* ── explanatory notes ── */
+.sch-note {
+  font-size: 12.5px; line-height: 1.65; color: var(--muted);
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 11px 14px; margin-bottom: 14px;
+}
+.sch-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; background: #fff; padding: 1px 5px; border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+/* ── settings form ── */
+.sch-settings { background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.sch-setting {
+  display: grid; grid-template-columns: 1fr 180px; gap: 18px; align-items: center;
+  padding: 15px 17px; border-bottom: 1px solid var(--line);
+}
+.sch-setting:last-of-type { border-bottom: none; }
+.sch-setting-label label { font-weight: 650; font-size: 13.5px; display: block; margin-bottom: 3px; }
+.sch-setting-help { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.sch-setting-default { font-size: 11px; color: var(--muted); margin-top: 4px; opacity: .8; }
+.sch-setting-control input[type="number"] {
+  font: inherit; font-size: 14px; width: 100%; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 7px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sch-switch { display: flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.sch-switch input { width: 17px; height: 17px; cursor: pointer; }
+.sch-settings-actions {
+  display: flex; gap: 9px; padding: 15px 17px;
+  background: var(--paper); border-top: 1px solid var(--line);
+}
+
+@media (max-width: 720px) {
+  .sch-detail-head, .sch-setting { grid-template-columns: 1fr; }
+  .sch-filters { flex-direction: column; align-items: stretch; }
+  .sch-count { margin-left: 0; }
+  .sch-table { display: block; overflow-x: auto; }
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scheduler — Ledger</title>
+<title>Scheduler — Tracking</title>
 <link rel="stylesheet" href="../ADMIN/style.css">
 <link rel="stylesheet" href="style.css">
 <script>
@@ -25,28 +25,30 @@
       <span class="sch-mark">S</span>
       <div>
         <div class="sch-title">Scheduler</div>
-        <div class="sch-sub">Task monitoring &amp; settings</div>
+        <div class="sch-sub">Rent generation &amp; penalty tracking</div>
       </div>
     </div>
     <div class="sch-top-actions">
-      <span id="schAutoNote" class="sch-auto">auto-refreshing every 15s</span>
+      <span id="schAutoNote" class="sch-auto">auto-refreshing every 30s</span>
       <button class="btn btn-ghost" id="schRefreshBtn">Refresh</button>
-      <button class="btn btn-primary" id="schRunBtn">Run sweep now</button>
       <a class="btn btn-ghost" href="../ADMIN/index.html">← Admin</a>
     </div>
   </header>
 
-  <!-- ── Status strip ─────────────────────────────────────────── -->
+  <!--
+    No "run now" button. The two schedulers are cron scripts that talk to the
+    database; this screen reads back what they recorded. A button here would
+    mean two things deciding when a bill is raised.
+  -->
+
   <section id="schStatus" class="sch-status-row"></section>
 
-  <!-- ── Tabs ─────────────────────────────────────────────────── -->
   <div class="path-toggle sch-tabs" id="schTabs">
     <button class="path-btn active" data-tab="overview">Overview</button>
-    <button class="path-btn" data-tab="running">Running</button>
-    <button class="path-btn" data-tab="missed">Missed / Pending</button>
-    <button class="path-btn" data-tab="failed">Failed</button>
-    <button class="path-btn" data-tab="upcoming">Upcoming</button>
-    <button class="path-btn" data-tab="history">History</button>
+    <button class="path-btn" data-tab="runs">Runs</button>
+    <button class="path-btn" data-tab="rent">Rent</button>
+    <button class="path-btn" data-tab="penalty">Penalty</button>
+    <button class="path-btn" data-tab="reports">Reports</button>
     <button class="path-btn" data-tab="settings">Settings</button>
   </div>
 
@@ -57,7 +59,7 @@
 <div id="modalRoot"></div>
 
 <script src="js/core.js"></script>
-<script src="js/dashboard.js"></script>
+<script src="js/views.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/init.js"></script>
 </body>
