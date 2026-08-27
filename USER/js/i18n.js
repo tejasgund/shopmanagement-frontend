@@ -121,18 +121,25 @@ const STRINGS = {
      accounting vocabulary ("दंड" is the everyday word; "व्याज" would read as
      interest, which this is not). */
   'bill.lateFee':      { mr: 'उशिराचा दंड',      en: 'Late fee' },
-  // Reads after the day count: "132 दिवस" / "132 days". Deliberately not
-  // "दिवसांचा दंड" - it follows "उशिराचा दंड", and saying दंड twice in one
-  // line reads as two separate charges.
+  // Reads after the day count: "5 दिवस" / "5 days".
   'bill.lateFeeDays':  { mr: 'दिवस',             en: 'days' },
-  'bill.originalBill': { mr: 'मूळ बिल',          en: 'Original bill' },
-  'bill.totalToPay':   { mr: 'एकूण भरायचे',      en: 'Total to pay' },
-  'bill.includesLateFee': { mr: 'यात उशिराचा दंड धरला आहे',
-                            en: 'includes a late fee' },
-  'bill.lateFeeWhy':   { mr: 'भरायची तारीख उलटल्यावर दररोज थोडा दंड लागतो. बिल भरले की दंड वाढायचा थांबतो.',
-                         en: 'A small late fee is added each day after the pay-by date. It stops growing as soon as the bill is paid.' },
+  'bill.lateFeeWhy':   { mr: 'भरायची तारीख उलटल्यावर दररोज थोडा दंड लागतो. मूळ बिल भरले की दंड वाढायचा थांबतो.',
+                         en: 'A small late fee is added each day after the pay-by date. It stops growing once the original bill is paid.' },
   'bill.lateFeeAsk':   { mr: 'शंका असेल तर ऑफिसला विचारा.',
                          en: 'Ask the office if this looks wrong.' },
+
+  /* ---- a late fee is its own bill now ----
+     Two rows instead of one, so each says plainly what it is. The fee row
+     names the bill it belongs to; the original row says a fee has been added
+     against it. Neither number is a mixture of the two any more. */
+  'bill.isLateFee':    { mr: 'उशिराचा दंड',      en: 'Late fee' },
+  'bill.feeForBill':   { mr: 'या बिलावरचा दंड',  en: 'Late fee on bill' },
+  'bill.feeAdded':     { mr: 'या बिलावर दंड लागला आहे', en: 'A late fee has been added to this bill' },
+  'bill.feeSettled':   { mr: 'दंड भरला आहे',     en: 'the fee is paid' },
+  'bill.seeFeeBill':   { mr: 'दंडाचे बिल पहा',   en: 'See the late fee bill' },
+  'bill.seeMainBill':  { mr: 'मूळ बिल पहा',      en: 'See the original bill' },
+  'bill.rentUnchanged':{ mr: 'मूळ बिलाची रक्कम बदलत नाही. दंड वेगळ्या बिलात दाखवला आहे.',
+                         en: 'The original bill amount never changes. The late fee is shown as a separate bill.' },
   'home.includesLateFee': { mr: 'यात उशिराचा दंड धरला आहे',
                             en: 'includes late fees of' },
   'bill.fullyPaid':  { mr: 'पूर्ण भरले',       en: 'Fully paid' },

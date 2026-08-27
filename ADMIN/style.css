@@ -1064,8 +1064,6 @@ td .row-actions{ display:flex; gap:6px; justify-content:flex-end; }
    fee separately. Wherever Pending is shown larger than Amount, the
    fee is named beside it - otherwise a correct charge reads as a bug.
    ================================================================ */
-.late-fee-amt { color: var(--rust, #a6531c); font-weight: 700; }
-.late-fee-sub { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--font-mono); }
 
 /* A fee always came from a scheduler run that recorded why - one click to it. */
 .late-fee-chip {

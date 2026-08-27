@@ -777,6 +777,15 @@ input,textarea,select{ font-family:inherit; font-size:16px; }  /* 16px stops iOS
   padding: 2px 2px 10px;
 }
 
+/* On the original bill: a late fee has been raised, and it is one tap away. */
+.tp-fee-note-box {
+  border: 1px solid var(--tp-line, #e4ddd2);
+  border-left: 3px solid var(--tp-warn, #a6531c);
+  border-radius: 0 12px 12px 0; padding: 10px 13px; margin: 10px 0 8px;
+  background: var(--tp-paper, #faf7f2); font-size: 13.5px;
+}
+.tp-fee-note-box .tp-fee-why { padding: 6px 0 0; }
+
 /* Under the big "you need to pay" number on the home tab. */
 .tp-fee-note {
   font-size: 13px; margin-top: 4px; opacity: .92;

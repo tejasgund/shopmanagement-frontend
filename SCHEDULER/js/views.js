@@ -447,7 +447,6 @@ async function renderBillHistory(billId){
   }
 
   const b = data.bill;
-  const fee = Number(b.penalty_amount || 0);
 
   body.innerHTML = `
     <button class="btn btn-ghost btn-sm" id="schBillBack">← Back</button>
@@ -467,11 +466,16 @@ async function renderBillHistory(billId){
         </div>
       </div>
       <div class="sch-task-right">
-        <div class="sch-amount-big">${amountFmt(Number(b.amount || 0) + fee)}</div>
+        <div class="sch-amount-big">${amountFmt(b.amount)}</div>
         <div class="sch-task-meta">
-          ${amountFmt(b.amount)} bill
-          ${fee > 0 ? ` + ${amountFmt(fee)} late fee (${b.penalty_days || 0} day(s))` : ''}<br>
-          ${amountFmt(b.paid_amount)} paid · ${amountFmt(b.pending_amount)} outstanding
+          ${amountFmt(b.paid_amount)} paid · ${amountFmt(b.pending_amount)} outstanding<br>
+          <!-- A late fee is its own bill, so this shows the OTHER end of the
+               link rather than a total mixing the two. -->
+          ${b.parent_bill_id
+            ? `late fee on <a href="#bill-${b.parent_bill_id}">bill #${b.parent_bill_id}</a>`
+            : (b.late_fee_bill_id
+                ? `late fee of ${amountFmt(b.late_fee_amount)} raised as <a href="#bill-${b.late_fee_bill_id}">bill #${b.late_fee_bill_id}</a>`
+                : 'no late fee')}
         </div>
       </div>
     </div>

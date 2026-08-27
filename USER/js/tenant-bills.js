@@ -59,14 +59,13 @@ function groupBillsByMonth(bills){
     }
     const g = byKey[key];
     g.bills.push(b);
-    // Billed counts what is OWED, not what was originally raised: with a late
-    // fee applied, summing `amount` here would print "Billed 10,000 ... Left
-    // 23,200" on the same line, and the tenant would be right to distrust it.
-    // billed - paid = left, always.
-    g.billed  += billPenalty(b).totalPayable;
+    // Every bill now carries only its own charge - a late fee is a separate
+    // row with its own amount - so billed - paid = left without any special
+    // casing. `fees` counts the late-fee rows so the strip can name them.
+    g.billed  += Number(b.amount || 0);
     g.paid    += Number(b.paid_amount || 0);
     g.pending += Number(b.pending_amount || 0);
-    g.fees    += billPenalty(b).amount;
+    if (isLateFeeBill(b)) g.fees += Number(b.amount || 0);
   });
 
   return groups;
@@ -102,24 +101,36 @@ function monthBlockHtml(g){
 /* ================================================================
    LATE FEE
 
-   The API sends a `penalty` block on every bill (see
-   routers/tenant_portal.py). It may be absent on a payload cached by an
-   older version of this app, so every read goes through here rather than
-   reaching into b.penalty directly - a missing block must mean "no late
-   fee", never a crash on a screen someone is trying to pay from.
+   A late fee is its OWN bill now, linked to the bill it was raised
+   for. The API sends `late_fee` on the original bill and
+   `parent_bill` on the fee bill; exactly one is ever set.
+
+   That is the whole fix for "which is the bill and which is the
+   penalty": two rows, each stating what it is, and neither figure a
+   mixture of the two. A rent bill for 10,000 reads 10,000 however
+   long it has been overdue.
+
+   Every read is defaulted - a payload cached by an older version of
+   this app has neither key, and a missing link must mean "no fee",
+   never a crash on a screen someone is trying to pay from.
    ================================================================ */
-function billPenalty(b){
-  const p = (b && b.penalty) || {};
-  const amount = Number(p.penalty_amount || 0);
-  return {
-    amount,
-    days: Number(p.penalty_days || 0),
-    daysOverdue: Number(p.days_overdue || 0),
-    // Trust the server's own flag when it is there; fall back to the figure.
-    has: p.has_penalty !== undefined ? !!p.has_penalty : amount > 0.004,
-    totalPayable: Number(p.total_payable != null ? p.total_payable
-                                                 : Number(b.amount || 0) + amount),
-  };
+function lateFeeOf(b){
+  return (b && b.late_fee) || null;      // the fee raised against THIS bill
+}
+
+function parentOf(b){
+  return (b && b.parent_bill) || null;   // the bill THIS fee was raised for
+}
+
+function isLateFeeBill(b){
+  return !!(b && (b.parent_bill || b.parent_bill_id));
+}
+
+/* Jump between a bill and its fee. Both live in the same list, so this is a
+   local hop rather than a fetch. */
+function openLinkedBill(billId){
+  closeModal();
+  setTimeout(() => openBillSheet(Number(billId)), 180);
 }
 
 function billCardHtml(b){
@@ -133,14 +144,21 @@ function billCardHtml(b){
   else { state = t('state.notPaid'); stateClass = 'unpaid'; }
 
   const isLate = pending > 0.004 && b.due_date && new Date(b.due_date) < startOfToday();
-  const pen = billPenalty(b);
+  const fee = lateFeeOf(b);
+  const parent = parentOf(b);
 
   return `
   <button type="button" class="tp-bill ${isLate ? 'is-late' : ''}" data-bill-id="${b.id}">
     <div class="tp-bill-top">
       <div>
-        <div class="tp-bill-type">${escapeHtml(billTypeLabel(b.bill_type))}</div>
-        <div class="tp-bill-date">${dateFmt(b.bill_date)}</div>
+        <div class="tp-bill-type">
+          ${parent ? t('bill.isLateFee') : escapeHtml(billTypeLabel(b.bill_type))}
+        </div>
+        <div class="tp-bill-date">
+          ${parent
+            ? `${t('bill.feeForBill')} #${parent.bill_id} · ${dateFmt(b.bill_date)}`
+            : dateFmt(b.bill_date)}
+        </div>
       </div>
       <span class="tp-state tp-state-${stateClass}">${state}</span>
     </div>
@@ -157,10 +175,10 @@ function billCardHtml(b){
       </div>` : ''}
     </div>
 
-    ${pen.has && pending > 0.004 ? `
+    ${fee ? `
     <div class="tp-bill-fee">
-      <span>${t('bill.lateFee')}</span>
-      <strong>+${currency(pen.amount)}</strong>
+      <span>${t('bill.feeAdded')}</span>
+      <strong>${fee.is_settled ? t('bill.feeSettled') : currency(fee.pending_amount)}</strong>
     </div>` : ''}
 
     ${isLate
@@ -177,7 +195,8 @@ function openBillSheet(billId){
 
   const pending = Number(b.pending_amount || 0);
   const paid = Number(b.paid_amount || 0);
-  const pen = billPenalty(b);
+  const fee = lateFeeOf(b);
+  const parent = parentOf(b);
 
   const forThisBill = tp.payments.filter(p => p.bill_id === b.id)
     .sort((a, c) => new Date(c.payment_date) - new Date(a.payment_date));
@@ -186,35 +205,54 @@ function openBillSheet(billId){
     <div class="tp-sheet">
       <div class="tp-sheet-hero ${pending > 0.004 ? '' : 'is-paid'}">
         <div class="tp-sheet-hero-label">${pending > 0.004 ? t('bill.leftToPay') : t('bill.fullyPaid')}</div>
-        <div class="tp-sheet-hero-value">${currency(pending > 0.004 ? pending : pen.totalPayable)}</div>
+        <div class="tp-sheet-hero-value">${currency(pending > 0.004 ? pending : Number(b.amount || 0))}</div>
       </div>
 
       ${pending > 0.004 ? payOnlineSectionHtml(b, pending) : ''}
 
-      ${progressBarHtml(paid, pen.totalPayable)}
+      ${progressBarHtml(paid, Number(b.amount || 0))}
 
-      ${pen.has ? `
-      <!-- The whole point of this block: a tenant seeing a figure larger than
-           their rent must be able to read WHY without phoning anyone. Original
-           bill, the fee, the day count, and the two added up. -->
+      ${parent ? `
+      <!-- This IS the late fee. Say whose it is, and let the tenant hop to it:
+           a "Penalty" line with nothing attached to it is exactly the
+           unexplained charge that generated the complaints. -->
       <div class="tp-fee-box">
-        <div class="tp-kv"><span>${t('bill.originalBill')}</span><strong>${currency(b.amount)}</strong></div>
-        <div class="tp-kv tp-fee-row">
-          <span>${t('bill.lateFee')}${pen.days > 0 ? ` · ${pen.days} ${t('bill.lateFeeDays')}` : ''}</span>
-          <strong class="tp-red">+${currency(pen.amount)}</strong>
+        <div class="tp-kv">
+          <span>${t('bill.feeForBill')}</span>
+          <strong>#${parent.bill_id} · ${escapeHtml(billTypeLabel(parent.bill_type))}</strong>
         </div>
-        <div class="tp-kv tp-fee-total">
-          <span>${t('bill.totalToPay')}</span><strong>${currency(pen.totalPayable)}</strong>
+        <div class="tp-kv">
+          <span>${t('bill.dueDate')}</span><strong>${dateFmt(parent.due_date)}</strong>
         </div>
+        ${b.penalty_days ? `
+        <div class="tp-kv">
+          <span>${t('bill.lateFee')}</span>
+          <strong>${b.penalty_days} ${t('bill.lateFeeDays')}</strong>
+        </div>` : ''}
       </div>
-      <div class="tp-fee-why">${t('bill.lateFeeWhy')} ${t('bill.lateFeeAsk')}</div>`
-      : `<div class="tp-kv"><span>${t('bill.amount')}</span><strong>${currency(b.amount)}</strong></div>`}
+      <div class="tp-fee-why">${t('bill.lateFeeWhy')} ${t('bill.lateFeeAsk')}</div>
+      <button type="button" class="tp-btn tp-btn-light tp-btn-block"
+              data-open-bill="${parent.bill_id}">${t('bill.seeMainBill')}</button>`
+      : ''}
+
+      ${fee ? `
+      <!-- The original bill: its own amount is untouched, and the fee is a
+           separate bill one tap away. -->
+      <div class="tp-fee-note-box">
+        <div>${t('bill.feeAdded')} — <strong>${fee.is_settled ? t('bill.feeSettled') : currency(fee.pending_amount)}</strong></div>
+        <div class="tp-fee-why">${t('bill.rentUnchanged')}</div>
+      </div>
+      <button type="button" class="tp-btn tp-btn-light tp-btn-block"
+              data-open-bill="${fee.bill_id}">${t('bill.seeFeeBill')}</button>`
+      : ''}
+
+      <div class="tp-kv"><span>${t('bill.amount')}</span><strong>${currency(b.amount)}</strong></div>
       <div class="tp-kv"><span>${t('bill.youPaid')}</span><strong>${currency(paid)}</strong></div>
       ${pending > 0.004 ? `<div class="tp-kv"><span>${t('bill.leftToPay')}</span><strong class="tp-red">${currency(pending)}</strong></div>` : ''}
       <div class="tp-kv"><span>${t('bill.date')}</span><strong>${dateFmt(b.bill_date)}</strong></div>
       ${b.due_date ? `<div class="tp-kv"><span>${t('bill.dueDate')}</span><strong>${dateFmt(b.due_date)}</strong></div>` : ''}
       <div class="tp-kv"><span>${t('bill.number')}</span><strong>#${b.id}</strong></div>
-      ${b.description ? `<div class="tp-sheet-note">${escapeHtml(b.description)}</div>` : ''}
+      ${b.description && !parent ? `<div class="tp-sheet-note">${escapeHtml(b.description)}</div>` : ''}
 
       ${forThisBill.length ? `
         <div class="tp-sheet-sub">${t('bill.paymentsFor')}</div>
@@ -228,6 +266,8 @@ function openBillSheet(billId){
   `, `<button class="tp-btn tp-btn-primary tp-btn-block" id="tpSheetClose">${t('common.close')}</button>`);
 
   document.getElementById('tpSheetClose').addEventListener('click', closeModal);
+  document.querySelectorAll('[data-open-bill]').forEach(btn =>
+    btn.addEventListener('click', () => openLinkedBill(btn.dataset.openBill)));
   document.getElementById('tpPayBtn')?.addEventListener('click', () => startRazorpayPayment(b.id));
 }
 

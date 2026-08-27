@@ -37,11 +37,13 @@ function homeAmountCardHtml(due, unpaid, overdue, next){
   const overdueTotal = overdue.reduce((s, b) => s + Number(b.pending_amount || 0), 0);
   const isLate = overdue.length > 0;
 
-  // The big number already includes late fees, because pending_amount does.
-  // Saying so under it is the difference between a tenant trusting the figure
-  // and ringing the office about it.
-  const feeTotal = unpaid.reduce(
-    (sum, b) => sum + Number((b.penalty && b.penalty.penalty_amount) || 0), 0);
+  // The big number is the sum of every unpaid bill, and late fees are now
+  // bills of their own - so it already includes them. Saying so under it is
+  // the difference between a tenant trusting the figure and ringing the
+  // office about it.
+  const feeTotal = unpaid
+    .filter(b => b.parent_bill_id || b.parent_bill)
+    .reduce((sum, b) => sum + Number(b.pending_amount || 0), 0);
   const feeLine = feeTotal > 0.004
     ? `<div class="tp-fee-note">${t('home.includesLateFee')} <strong>${currency(feeTotal)}</strong></div>`
     : '';

@@ -30,48 +30,40 @@ const MONTH_NAMES = MONTH_OPTIONS.map(m=>m.label);
 /* ================================================================
    LATE FEE
 
-   `amount` is the original bill; the penalty scheduler accrues a late
-   fee separately into penalty_amount, and pending_amount carries the
-   two added together. Showing pending without showing the fee is how a
-   correct charge ends up looking like a bug to whoever is reading the
-   screen - so wherever pending is shown larger than amount, the fee is
-   named next to it.
+   A late fee is its OWN bill now (bill_type "Penalty", with
+   parent_bill_id naming the bill it was raised for), not a column on
+   the original. So a Rent bill for 10,000 reads 10,000 however long
+   it is overdue, and the fee is a separate row anyone can see, count
+   and take payment against.
 
-   Defaulted reads throughout: a payload from before these fields
-   existed must render, not throw.
+   What these helpers add is the LINK: a fee row that does not say
+   which bill it belongs to is exactly the unexplained charge that
+   generated the complaints.
+
+   Defaulted reads throughout: a payload from before the split must
+   render, not throw.
    ================================================================ */
-function billLateFee(b){
-  return Number((b && b.penalty_amount) || 0);
+function isLateFeeBill(b){
+  return !!(b && b.parent_bill_id);
 }
 
-function billHasLateFee(b){
-  return billLateFee(b) > 0.004;
+/* On a late-fee row: a link back to the bill it is for. On the original: a
+   link to the fee. Both resolved from the bill list already in hand, so
+   neither costs a request. */
+function lateFeeOfBill(bills, bill){
+  return bills.find(x => x.parent_bill_id === bill.id) || null;
 }
 
-function billPayable(b){
-  // total_payable is computed server-side (schemas/api.py) so this screen
-  // and the tenant portal cannot disagree; the fallback is for older payloads.
-  const server = b && b.total_payable;
-  return Number(server != null ? server : Number(b.amount || 0) + billLateFee(b));
-}
-
-/* A late fee always came from a scheduler run, and that run recorded why.
-   Linking straight to it means "where did this come from" is one click, not
-   a conversation. */
+/* The fee always came from a scheduler run that recorded why, so one click
+   reaches the full calculation rather than a conversation. */
 function lateFeeChipHtml(b){
-  if (!billHasLateFee(b)) return '';
+  if (!isLateFeeBill(b)) return '';
   const days = Number(b.penalty_days || 0);
   return `<a class="late-fee-chip" href="../SCHEDULER/index.html#bill-${b.id}"
-             title="Late fee of ${currency(billLateFee(b))}${days ? ` over ${days} chargeable day(s)` : ''}. Open the Scheduler screen for the full calculation."
-             >+${currency(billLateFee(b))} late fee</a>`;
+             title="Late fee on bill #${b.parent_bill_id}${days ? `, ${days} chargeable day(s)` : ''}. Open the Scheduler screen for the full calculation."
+             >late fee · bill #${b.parent_bill_id}</a>`;
 }
 
-function rupeeIcon(){ return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3c3 0 5-1.5 5-5"/></svg>`; }
-function calendarIcon(){ return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`; }
-
-/* ================================================================
-   DATA HELPERS
-   ================================================================ */
 function billingEnrichedData(){
   const bills = state.cache.bills || [];
   const payments = state.cache.payments || [];
@@ -511,7 +503,7 @@ function billingFilteredListHtml(bills){
   return `
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th>Type</th><th class="num">Amount</th><th class="num">Late fee</th><th class="num">Pending</th><th>Status</th><th>Bill Date</th><th>Due</th><th></th></tr></thead>
+      <thead><tr><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th>Type</th><th class="num">Amount</th><th>Late fee</th><th class="num">Pending</th><th>Status</th><th>Bill Date</th><th>Due</th><th></th></tr></thead>
       <tbody>
         ${sorted.map(b => `
         <tr>
@@ -521,9 +513,7 @@ function billingFilteredListHtml(bills){
           <td>${escapeHtml(b.complexName)}</td>
           <td>${escapeHtml(b.bill_type)}</td>
           <td class="num">${currency(b.amount)}</td>
-          <td class="num">${billHasLateFee(b)
-            ? `<span class="late-fee-amt" title="${b.penalty_days || 0} chargeable day(s)">+${currency(billLateFee(b))}</span>`
-            : '<span class="muted">—</span>'}</td>
+          <td>${isLateFeeBill(b) ? lateFeeChipHtml(b) : '<span class="muted">—</span>'}</td>
           <td class="num">${currency(b.pending_amount)}</td>
           <td>${stampHtml(b.status)}${b.isOverdue ? ' <span class="stamp pending">overdue</span>' : ''}</td>
           <td>${dateFmt(b.bill_date)}</td>
@@ -954,14 +944,13 @@ function billingBillsByTypeHtml(mBills){
           </div>
           <div style="text-align:right;">
             ${stampHtml(b.status)}${b.isOverdue ? ' <span class="stamp pending">overdue</span>' : ''}
-            <div style="font-family:var(--font-mono); font-weight:700; margin-top:4px;">${currency(billPayable(b))}</div>
-            ${billHasLateFee(b) ? `<div class="late-fee-sub">${currency(b.amount)} + ${currency(billLateFee(b))} fee</div>` : ''}
+            <div style="font-family:var(--font-mono); font-weight:700; margin-top:4px;">${currency(b.amount)}</div>
           </div>
         </div>
         <div class="billing-bill-meta">
           <span>Bill date: ${dateFmt(b.bill_date)}</span>
           <span>Due: ${dateFmt(b.due_date)}</span>
-          ${billHasLateFee(b) ? `<span>${lateFeeChipHtml(b)}</span>` : ''}
+          ${isLateFeeBill(b) ? `<span>${lateFeeChipHtml(b)}</span>` : ''}
           <span>Paid: ${currency(b.paid_amount)}</span>
           <span>Pending: ${currency(b.pending_amount)}</span>
         </div>
@@ -1284,14 +1273,13 @@ function billingDuesBillsByTypeHtml(mBills){
           </div>
           <div style="text-align:right;">
             ${stampHtml(b.status)}${b.isOverdue ? ' <span class="stamp pending">overdue</span>' : ''}
-            <div style="font-family:var(--font-mono); font-weight:700; margin-top:4px;">${currency(billPayable(b))}</div>
-            ${billHasLateFee(b) ? `<div class="late-fee-sub">${currency(b.amount)} + ${currency(billLateFee(b))} fee</div>` : ''}
+            <div style="font-family:var(--font-mono); font-weight:700; margin-top:4px;">${currency(b.amount)}</div>
           </div>
         </div>
         <div class="billing-bill-meta">
           <span>Bill date: ${dateFmt(b.bill_date)}</span>
           <span>Due: ${dateFmt(b.due_date)}</span>
-          ${billHasLateFee(b) ? `<span>${lateFeeChipHtml(b)}</span>` : ''}
+          ${isLateFeeBill(b) ? `<span>${lateFeeChipHtml(b)}</span>` : ''}
           <span>Paid: ${currency(b.paid_amount)}</span>
           <span>Pending: ${currency(b.pending_amount)}</span>
         </div>
