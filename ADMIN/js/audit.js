@@ -75,10 +75,15 @@ function attachAuditHandlers(){
   loadAuditPage();
 }
 
+let _auditRequestSeq = 0;
 async function loadAuditPage(){
   const wrap = document.getElementById('auditTableWrap');
   const pager = document.getElementById('auditPager');
   wrap.innerHTML = skeletonHtml();
+  // Rapid filter/page changes can send more than one request in flight;
+  // only the response for the LATEST request may update the screen, so an
+  // older one that resolves after a newer one can't show stale rows.
+  const seq = ++_auditRequestSeq;
   try {
     const params = new URLSearchParams();
     params.set('page', auditState.page);
@@ -90,6 +95,7 @@ async function loadAuditPage(){
     if (auditState.end_date) params.set('end_date', new Date(new Date(auditState.end_date).setHours(23,59,59)).toISOString());
     if (auditState.search) params.set('search', auditState.search);
     const res = await api(`/api/audit-logs?${params}`);
+    if (seq !== _auditRequestSeq) return;  // a newer request has since started
     const rows = res.data || [];
     const countEl = document.getElementById('auditCount');
     if (countEl) countEl.textContent = res.total + ' record' + (res.total !== 1 ? 's' : '');
@@ -123,8 +129,10 @@ async function loadAuditPage(){
     document.getElementById('auditPrevBtn')?.addEventListener('click', () => { if (auditState.page > 1){ auditState.page--; loadAuditPage(); } });
     document.getElementById('auditNextBtn')?.addEventListener('click', () => { if (auditState.page < totalPages){ auditState.page++; loadAuditPage(); } });
   } catch(err){
+    if (seq !== _auditRequestSeq) return;
     wrap.innerHTML = errorBannerHtml(err.message);
     pager.innerHTML = '';
+    document.getElementById('retryBtn')?.addEventListener('click', () => loadAuditPage());
   }
 }
 

@@ -12,6 +12,11 @@ const meterState = {
   section: 'review',     // 'review' | 'meters' | 'tariffs'
   statusFilter: 'pending',
   complexId: '',
+  // The review queue is naturally small under "Pending" (cleared as reviews
+  // happen) but "All"/"Approved"/"Rejected" over a long history is not -
+  // only this many cards go into the DOM at once. Reset to the default
+  // whenever the status/complex filter changes.
+  visibleCount: 60,
 };
 
 async function metersView(){
@@ -66,7 +71,14 @@ async function reviewQueueHtml(){
   if (meterState.complexId) params.set('complex_id', meterState.complexId);
   const readings = await api(`/api/meter-readings?${params}`);
   meterState._readings = readings;
+  return reviewQueueBodyHtml(readings);
+}
 
+// Everything below is synchronous and pure - "Show more" (expandReviewQueue)
+// calls this again on the already-fetched meterState._readings instead of
+// re-requesting the whole queue from the server just to reveal more of what
+// it already has.
+function reviewQueueBodyHtml(readings){
   const complexes = state.cache.complexes || [];
   const counts = { pending: 0, approved: 0, rejected: 0 };
   readings.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
@@ -94,9 +106,11 @@ async function reviewQueueHtml(){
       emptyIcon());
   }
 
+  const shown = readings.slice(0, meterState.visibleCount);
+  const remaining = readings.length - shown.length;
   return toolbar + `
   <div class="meter-review-grid">
-    ${readings.map(r => `
+    ${shown.map(r => `
     <div class="card meter-review-card ${r.status==='pending'?'is-pending':''}" data-open-reading="${r.id}">
       <div class="mrc-head">
         <div>
@@ -128,7 +142,19 @@ async function reviewQueueHtml(){
         ${r.status === 'pending' ? '<span class="btn btn-primary btn-sm mrc-cta">Review →</span>' : ''}
       </div>
     </div>`).join('')}
-  </div>`;
+  </div>
+  ${remaining > 0 ? `<div style="text-align:center; margin-top:16px;">
+    <button class="btn btn-ghost btn-sm" id="meterShowMore">Show ${Math.min(60, remaining)} more (${remaining} not shown)</button>
+  </div>` : ''}`;
+}
+
+// Reveals more of the already-fetched review queue without a network call.
+function expandReviewQueue(){
+  meterState.visibleCount += 60;
+  const el = document.getElementById('meterBody');
+  if (!el || !meterState._readings) return;
+  el.innerHTML = reviewQueueBodyHtml(meterState._readings);
+  attachMeterBodyHandlers();
 }
 
 function readingStampHtml(status){
@@ -518,6 +544,7 @@ function openMeterModal(existing){
     await withSavingState('saveBtn', async () => {
       if (isEdit) await api(`/api/meters/${existing.id}`, { method:'PUT', body });
       else await api('/api/meters', { method:'POST', body });
+      invalidateMetersCache();
       closeModal();
       showToast(isEdit?'Meter updated':'Meter added', 'success');
       renderMeterBody();
@@ -630,13 +657,17 @@ function openTariffModal(){
    ================================================================ */
 function attachMeterBodyHandlers(){
   document.querySelectorAll('[data-reading-status]').forEach(chip => chip.addEventListener('click', () => {
+    if (chip.dataset.readingStatus === meterState.statusFilter) return;
     meterState.statusFilter = chip.dataset.readingStatus;
+    meterState.visibleCount = 60;
     renderMeterBody();
   }));
   document.getElementById('meterComplexFilter')?.addEventListener('change', (e) => {
     meterState.complexId = e.target.value;
+    meterState.visibleCount = 60;
     renderMeterBody();
   });
+  document.getElementById('meterShowMore')?.addEventListener('click', expandReviewQueue);
   document.querySelectorAll('[data-open-reading]').forEach(card => card.addEventListener('click', () => {
     openReadingReviewModal(Number(card.dataset.openReading));
   }));
@@ -666,6 +697,7 @@ function confirmDeleteMeter(id, name){
   document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
     await withSavingState('confirmDeleteBtn', async () => {
       await api(`/api/meters/${id}`, { method:'DELETE' });
+      invalidateMetersCache();
       closeModal(); showToast('Meter deleted','success'); renderMeterBody();
     }, 'Deleting…');
   });

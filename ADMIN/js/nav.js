@@ -242,14 +242,38 @@ async function ensureLoaded(key, path){
   return state.cache[key];
 }
 
+/* Meters are read through ensureLoaded('meters', ...) / ('metersAssigned', ...)
+   from several screens (Submeters, Shops, Collect reading). Call this after
+   any create/update/delete/assign/unassign so the next screen that needs the
+   list gets a fresh one instead of the pre-mutation cache. */
+function invalidateMetersCache(){
+  state.loaded.meters = false;
+  state.loaded.metersAssigned = false;
+}
+
+// Table search boxes (used by Users/Shops/Submeters/Meters/etc.) are plain,
+// uncontrolled inputs re-created from scratch on every renderView() call
+// (e.g. after saving an edit) - without this, whatever the person had typed
+// was silently thrown away and the list snapped back to unfiltered on every
+// save. Keyed by view name so each screen remembers its own search text.
+function tableSearchApply(input, q){
+  document.querySelectorAll('tbody tr[data-search]').forEach(tr => {
+    tr.style.display = tr.dataset.search.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
 function attachSearchFilter(){
   const input = document.getElementById('tableSearch');
   if (!input) return;
+  const view = state.view;
+  const remembered = state.tableSearch[view] || '';
+  if (remembered){
+    input.value = remembered;
+    tableSearchApply(input, remembered.toLowerCase());
+  }
   input.addEventListener('input', () => {
     const q = input.value.trim().toLowerCase();
-    document.querySelectorAll('tbody tr[data-search]').forEach(tr => {
-      tr.style.display = tr.dataset.search.toLowerCase().includes(q) ? '' : 'none';
-    });
+    state.tableSearch[view] = input.value.trim();
+    tableSearchApply(input, q);
   });
 }
 
@@ -258,15 +282,20 @@ function attachSearchFilter(){
    ================================================================ */
 (function initGlobalSearch(){
   let _searchTimer;
+  let _searchSeq = 0;   // guards against an older response overwriting a newer one
   const input = document.getElementById('globalSearch');
   const results = document.getElementById('globalSearchResults');
   input.addEventListener('input', () => {
     clearTimeout(_searchTimer);
     const q = input.value.trim();
-    if (!q){ results.style.display='none'; return; }
+    if (!q){ _searchSeq++; results.style.display='none'; return; }
+    const seq = ++_searchSeq;
+    results.innerHTML = '<div style="padding:14px 16px; font-size:13px; color:var(--muted);">Searching…</div>';
+    results.style.display = 'block';
     _searchTimer = setTimeout(async () => {
       try {
         const data = await api(`/api/search?q=${encodeURIComponent(q)}`);
+        if (seq !== _searchSeq) return;  // a newer search has since started
         const total = (data.users||[]).length + (data.shops||[]).length + (data.complexes||[]).length;
         if (total === 0){ results.innerHTML = '<div style="padding:14px 16px; font-size:13px; color:var(--muted);">No results found.</div>'; results.style.display='block'; return; }
         let html = '';
@@ -286,7 +315,10 @@ function attachSearchFilter(){
           data.complexes.map(c=>`<div class="gs-item" style="padding:9px 14px; font-size:13.5px; border-bottom:1px solid var(--line);">${escapeHtml(c.name)} <span style="color:var(--muted);">${escapeHtml(c.address||'')}</span></div>`).join(''); }
         results.innerHTML = html;
         results.style.display='block';
-      } catch(e){ results.innerHTML = `<div style="padding:14px 16px; font-size:13px; color:var(--danger);">${escapeHtml(e.message)}</div>`; results.style.display='block'; }
+      } catch(e){
+        if (seq !== _searchSeq) return;
+        results.innerHTML = `<div style="padding:14px 16px; font-size:13px; color:var(--danger);">${escapeHtml(e.message)}</div>`; results.style.display='block';
+      }
     }, 300);
   });
   document.addEventListener('click', (e) => { if (!input.contains(e.target) && !results.contains(e.target)) results.style.display='none'; });

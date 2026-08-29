@@ -23,8 +23,11 @@ async function shopsView(){
     ensureLoaded('complexes','/api/complex'),
   ]);
   // Meters are shown per shop in the drill-down, so fetch them alongside.
-  // Non-fatal: the shop list still works if this call fails.
-  try { _shopMeters = await api('/api/meters?assigned=true'); }
+  // Cached (like shops/complexes above) and invalidated by
+  // invalidateMetersCache() on any meter change - re-opening or
+  // re-rendering Shops no longer refetches the whole meters table every
+  // time. Non-fatal: the shop list still works if this call fails.
+  try { _shopMeters = await ensureLoaded('metersAssigned', '/api/meters?assigned=true'); }
   catch (e) { _shopMeters = []; }
 
   if (_shopsSelectedComplex !== null) {

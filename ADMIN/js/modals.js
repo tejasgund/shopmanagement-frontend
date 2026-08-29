@@ -212,6 +212,7 @@ async function renderShopForm(existing){
             initial_reading: parseFloat(document.getElementById('sMeterReading').value) || 0,
             installation_date: new Date().toISOString(),
           }});
+          invalidateMetersCache();
           closeModal();
           showToast(`Shop added with meter ${meterNumber}`, 'success');
         } catch (err) {

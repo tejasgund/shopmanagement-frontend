@@ -18,9 +18,13 @@ async function depositsView(){
     ensureLoaded('users','/api/user'),
     ensureLoaded('shops','/api/shop'),
   ]);
-  let deposits = [];
-  try { deposits = await api('/api/deposit-payment'); } catch(e){}
-  state.cache.deposits = deposits;
+  // Cached like complexes/users/shops above (previously refetched from the
+  // server every time the Deposits nav item was opened, and a failure here
+  // was swallowed silently - the screen just showed 0/empty with nothing to
+  // explain why). Letting the error propagate instead of catching it here
+  // means renderView()'s own catch block shows the error banner with a
+  // working Retry button, exactly like every other view.
+  const deposits = await ensureLoaded('deposits', '/api/deposit-payment');
 
   const mode = state.deposits.mode || 'tenant';
   return `
@@ -31,6 +35,10 @@ async function depositsView(){
   </div>
   <div id="depositsBody"></div>
   `;
+}
+
+function invalidateDepositsCache(){
+  state.loaded.deposits = false;
 }
 
 function attachDepositHandlers(){
@@ -244,6 +252,7 @@ function openEditDepositModal(dpId){
         amount, remarks,
         payment_date: dateStr ? new Date(dateStr).toISOString() : undefined,
       }});
+      invalidateDepositsCache();
       closeModal();
       showToast('Deposit payment updated', 'success');
       await renderView('deposits');
@@ -262,6 +271,7 @@ function confirmDeleteDeposit(dp){
   document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
     await withSavingState('confirmDeleteBtn', async () => {
       await api(`/api/deposit-payment/${dp.id}`, { method:'DELETE' });
+      invalidateDepositsCache();
       closeModal();
       showToast('Deposit payment deleted', 'success');
       await renderView('deposits');
@@ -368,6 +378,7 @@ async function openDepositModal(presetUserId){
     if (!ok) return;
     await withSavingState('saveBtn', async () => {
       await api('/api/deposit-payment', { method:'POST', body:{ user_id:uid, shop_id:sid, amount, payment_date: new Date(payment_date).toISOString(), remarks } });
+      invalidateDepositsCache();
       closeModal();
       showToast(`Deposit of ${currency(amount)} recorded`, 'success');
       await renderView('deposits');

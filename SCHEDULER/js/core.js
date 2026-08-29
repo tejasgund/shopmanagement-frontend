@@ -22,6 +22,10 @@ const sch = {
   openRunId: null,           // when set, the Runs tab shows one run in detail
   billId: null,              // when set (#bill-123), one bill's history replaces the tabs
   timer: null,
+  // Accumulated rows for tabs with a "Load more" button. Each holds
+  // {rows, total} and is reset to null whenever a filter changes or the
+  // tab is (re)opened fresh - see loadMoreRows() / the render* functions.
+  paged: { runs: null, rent: null, penalty: null },
 };
 
 /* The two schedulers, and the labels used wherever one is named. Mirrors the

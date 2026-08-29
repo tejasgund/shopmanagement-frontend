@@ -246,6 +246,7 @@ function attachBillingHandlers(){
     const now = new Date();
     state.billing.section = 'manage';
     state.billing.manageTab = 'bills';
+    state.billing.visibleBillCount = 100;
     if (g === 'overdue') f.status = ['overdue'];
     else if (g === 'partial') f.status = ['partial'];
     else if (g === 'paid') f.status = ['paid'];
@@ -380,7 +381,7 @@ function billingManageBillsHtml(){
     <button class="btn btn-ghost filter-clear-btn" id="bfClear">Clear filters</button>
     <span class="filter-count" id="bfCount">${matched.length} record${matched.length!==1?'s':''}</span>
   </div>
-  ${billingFilteredListHtml(matched)}`;
+  ${billingFilteredListHtml(matched, state.billing.visibleBillCount)}`;
 }
 
 function billingManagePaymentsHtml(){
@@ -438,7 +439,7 @@ function billingManagePaymentsHtml(){
     <button class="btn btn-ghost filter-clear-btn" id="pfClear">Clear filters</button>
     <span class="filter-count">${matched.length} record${matched.length!==1?'s':''}</span>
   </div>
-  ${billingPaymentsListHtml(matched)}`;
+  ${billingPaymentsListHtml(matched, state.billing.visiblePaymentCount)}`;
 }
 
 function attachBillingManageResultHandlers(){
@@ -446,22 +447,29 @@ function attachBillingManageResultHandlers(){
     const pf = state.billing.paymentFilters;
     const sortSel = document.getElementById('pfSort');
     if (sortSel) sortSel.value = state.billing.paymentSort;
-    document.getElementById('pfComplex')?.addEventListener('change', (e) => { pf.complexId = e.target.value; renderBillingManageResults(); });
-    document.getElementById('pfMethod')?.addEventListener('change', (e) => { pf.method = e.target.value; renderBillingManageResults(); });
-    document.getElementById('pfYear')?.addEventListener('change', (e) => { pf.year = e.target.value; renderBillingManageResults(); });
-    document.getElementById('pfMonth')?.addEventListener('change', (e) => { pf.month = e.target.value; renderBillingManageResults(); });
+    const resetPaymentPage = () => { state.billing.visiblePaymentCount = 100; };
+    document.getElementById('pfComplex')?.addEventListener('change', (e) => { pf.complexId = e.target.value; resetPaymentPage(); renderBillingManageResults(); });
+    document.getElementById('pfMethod')?.addEventListener('change', (e) => { pf.method = e.target.value; resetPaymentPage(); renderBillingManageResults(); });
+    document.getElementById('pfYear')?.addEventListener('change', (e) => { pf.year = e.target.value; resetPaymentPage(); renderBillingManageResults(); });
+    document.getElementById('pfMonth')?.addEventListener('change', (e) => { pf.month = e.target.value; resetPaymentPage(); renderBillingManageResults(); });
     let searchTimer;
     document.getElementById('pfSearch')?.addEventListener('input', (e) => {
       clearTimeout(searchTimer);
       const val = e.target.value;
-      searchTimer = setTimeout(() => { pf.search = val; renderBillingManageResults(); }, 250);
+      searchTimer = setTimeout(() => { pf.search = val; resetPaymentPage(); renderBillingManageResults(); }, 250);
     });
     document.getElementById('pfSort')?.addEventListener('change', (e) => {
       state.billing.paymentSort = e.target.value;
+      resetPaymentPage();
       renderBillingManageResults();
     });
     document.getElementById('pfClear')?.addEventListener('click', () => {
       state.billing.paymentFilters = { complexId:'', method:'', year:'', month:'', search:'' };
+      resetPaymentPage();
+      renderBillingManageResults();
+    });
+    document.getElementById('pfShowMore')?.addEventListener('click', () => {
+      state.billing.visiblePaymentCount += 100;
       renderBillingManageResults();
     });
     document.querySelectorAll('[data-edit-payment]').forEach(btn => btn.addEventListener('click', () => openEditPaymentModal(Number(btn.dataset.editPayment))));
@@ -474,23 +482,31 @@ function attachBillingManageResultHandlers(){
 
   const sortSel = document.getElementById('bfSort');
   if (sortSel) sortSel.value = state.billing.sort;
+  const resetBillPage = () => { state.billing.visibleBillCount = 100; };
   initMsFields(['bfStatus','bfComplex','bfType','bfYear','bfMonth'], (id, values) => {
     const key = { bfStatus:'status', bfComplex:'complexIds', bfType:'typeSet', bfYear:'years', bfMonth:'months' }[id];
     state.billing.filters[key] = values;
+    resetBillPage();
     renderBillingManageResults();
   });
   let searchTimer;
   document.getElementById('bfSearch')?.addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     const val = e.target.value;
-    searchTimer = setTimeout(() => { state.billing.filters.search = val; renderBillingManageResults(); }, 250);
+    searchTimer = setTimeout(() => { state.billing.filters.search = val; resetBillPage(); renderBillingManageResults(); }, 250);
   });
   document.getElementById('bfSort')?.addEventListener('change', (e) => {
     state.billing.sort = e.target.value;
+    resetBillPage();
     renderBillingManageResults();
   });
   document.getElementById('bfClear')?.addEventListener('click', () => {
     state.billing.filters = { status:[], complexIds:[], typeSet:[], years:[], months:[], search:'' };
+    resetBillPage();
+    renderBillingManageResults();
+  });
+  document.getElementById('bfShowMore')?.addEventListener('click', () => {
+    state.billing.visibleBillCount += 100;
     renderBillingManageResults();
   });
   document.querySelectorAll('[data-record-payment]').forEach(btn => btn.addEventListener('click', () => openRecordPaymentModal(Number(btn.dataset.recordPayment))));
@@ -501,7 +517,7 @@ function attachBillingManageResultHandlers(){
   }));
 }
 
-function billingFilteredListHtml(bills){
+function billingFilteredListHtml(bills, visibleCount){
   if (bills.length === 0){
     return emptyStateHtml('No bills match your filters', 'Try adjusting or clearing filters.', emptyIcon());
   }
@@ -515,12 +531,19 @@ function billingFilteredListHtml(bills){
     if (sort==='tenant') return (a.user?.name||'').localeCompare(b.user?.name||'');
     return 0;
   });
+  // Windowed rendering: every matching bill is already in memory (needed for
+  // the filter counts and the other Billing tabs), but only the first
+  // `visibleCount` become actual <tr> elements - with a few thousand bills,
+  // building/laying out every row on every keystroke of a filter was the
+  // slow part, not the (already in-memory) filtering itself.
+  const shown = sorted.slice(0, visibleCount);
+  const remaining = sorted.length - shown.length;
   return `
   <div class="table-wrap">
     <table>
       <thead><tr><th>Bill</th><th>Tenant</th><th>Shop</th><th>Complex</th><th>Type</th><th class="num">Amount</th><th>Late fee</th><th class="num">Pending</th><th>Status</th><th>Bill Date</th><th>Due</th><th></th></tr></thead>
       <tbody>
-        ${sorted.map(b => `
+        ${shown.map(b => `
         <tr>
           <td class="mono">#${b.id}</td>
           <td>${b.user ? tenantLinkHtml(b.user_id, b.user.name) : `#${b.user_id}`}</td>
@@ -541,10 +564,13 @@ function billingFilteredListHtml(bills){
         </tr>`).join('')}
       </tbody>
     </table>
-  </div>`;
+  </div>
+  ${remaining > 0 ? `<div style="text-align:center; margin-top:14px;">
+    <button class="btn btn-ghost btn-sm" id="bfShowMore">Show ${Math.min(100, remaining)} more (${remaining} not shown)</button>
+  </div>` : ''}`;
 }
 
-function billingPaymentsListHtml(payments){
+function billingPaymentsListHtml(payments, visibleCount){
   if (payments.length === 0){
     return emptyStateHtml('No payments match your filters', 'Try adjusting or clearing filters.', emptyIcon());
   }
@@ -557,12 +583,14 @@ function billingPaymentsListHtml(payments){
     if (sort==='tenant') return (a.user?.name||'').localeCompare(b.user?.name||'');
     return 0;
   });
+  const shown = sorted.slice(0, visibleCount);
+  const remaining = sorted.length - shown.length;
   return `
   <div class="table-wrap">
     <table>
       <thead><tr><th>Date</th><th>Tenant</th><th>Shop</th><th>Complex</th><th>Bill</th><th class="num">Amount</th><th>Method</th><th>Remarks</th><th></th></tr></thead>
       <tbody>
-        ${sorted.map(p => `
+        ${shown.map(p => `
         <tr>
           <td>${dateFmt(p.payment_date)}</td>
           <td>${p.user ? tenantLinkHtml(p.bill?.user_id ?? p.user_id, p.user.name) : (p.bill ? `#${p.bill.user_id}` : '—')}</td>
@@ -579,7 +607,10 @@ function billingPaymentsListHtml(payments){
         </tr>`).join('')}
       </tbody>
     </table>
-  </div>`;
+  </div>
+  ${remaining > 0 ? `<div style="text-align:center; margin-top:14px;">
+    <button class="btn btn-ghost btn-sm" id="pfShowMore">Show ${Math.min(100, remaining)} more (${remaining} not shown)</button>
+  </div>` : ''}`;
 }
 
 /* ================================================================

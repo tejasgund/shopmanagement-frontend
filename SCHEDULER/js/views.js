@@ -138,14 +138,22 @@ function wireRunLinks(){
   });
 }
 
+const RUNS_PAGE_SIZE = 100;
+
 async function renderRuns(){
   if (sch.openRunId) return renderRunDetail(sch.openRunId);
 
-  const body = document.getElementById('schBody');
   const f = sch.filters.runs;
-  const data = await api('/api/scheduler/runs' + qs({ ...f, limit: 100 }));
+  const data = await api('/api/scheduler/runs' + qs({ ...f, limit: RUNS_PAGE_SIZE, offset: 0 }));
+  sch.paged.runs = { rows: data.runs.slice(), total: data.total };
+  renderRunsBody();
+}
 
-  body.innerHTML = `
+function runsFilterBarHtml(){
+  const f = sch.filters.runs;
+  const { rows, total } = sch.paged.runs;
+  const countLabel = rows.length < total ? `Showing ${rows.length} of ${total} run(s)` : `${total} run(s)`;
+  return `
     <div class="sch-filters">
       <label>Scheduler
         <select data-filter="runs.scheduler">
@@ -163,10 +171,18 @@ async function renderRuns(){
       <label>From <input type="date" data-filter="runs.date_from" value="${escapeHtml(f.date_from)}"></label>
       <label>To <input type="date" data-filter="runs.date_to" value="${escapeHtml(f.date_to)}"></label>
       <button class="btn btn-ghost btn-sm" id="schClearRuns">Clear</button>
-      <span class="sch-count">${data.total} run(s)</span>
-    </div>
-    ${data.runs.length ? data.runs.map(runRow).join('')
-                       : emptyState('No runs match these filters.')}`;
+      <span class="sch-count">${countLabel}</span>
+    </div>`;
+}
+
+function renderRunsBody(){
+  const body = document.getElementById('schBody');
+  const { rows, total } = sch.paged.runs;
+  const hasMore = rows.length < total;
+
+  body.innerHTML = runsFilterBarHtml() +
+    (rows.length ? rows.map(runRow).join('') : emptyState('No runs match these filters.')) +
+    (hasMore ? `<div class="sch-load-more" style="text-align:center; margin-top:14px;"><button class="btn btn-ghost btn-sm" id="schLoadMoreRuns">Load ${Math.min(RUNS_PAGE_SIZE, total - rows.length)} more (${total - rows.length} remaining)</button></div>` : '');
 
   wireFilters();
   wireRunLinks();
@@ -174,6 +190,18 @@ async function renderRuns(){
     sch.filters.runs = { scheduler: '', status: '', date_from: '', date_to: '' };
     renderTab('runs');
   });
+  document.getElementById('schLoadMoreRuns')?.addEventListener('click', () =>
+    loadMoreRuns().catch(e => showToast(e.message, 'error')));
+}
+
+async function loadMoreRuns(){
+  const btn = document.getElementById('schLoadMoreRuns');
+  if (btn){ btn.disabled = true; btn.textContent = 'Loading…'; }
+  const f = sch.filters.runs;
+  const data = await api('/api/scheduler/runs' + qs({ ...f, limit: RUNS_PAGE_SIZE, offset: sch.paged.runs.rows.length }));
+  sch.paged.runs.rows.push(...data.runs);
+  sch.paged.runs.total = data.total;
+  renderRunsBody();
 }
 
 async function renderRunDetail(runId){
@@ -266,19 +294,34 @@ function itemRow(item){
    RENT  (which day, which customer, and what was skipped)
    ══════════════════════════════════════════════════════════════ */
 
+const ITEMS_PAGE_SIZE = 200;
+
 async function renderRent(){
-  const body = document.getElementById('schBody');
   const f = sch.filters.rent;
   const data = await api('/api/scheduler/items' + qs({
     scheduler: 'auto_rent_generation',
     action: f.action,
     period_key: f.period_key,
     user_id: f.user,
-    limit: 200,
+    limit: ITEMS_PAGE_SIZE,
+    offset: 0,
   }));
+  sch.paged.rent = { rows: data.items.slice(), total: data.total };
+  renderRentBody();
+}
 
-  const created = data.items.filter(i => i.action === 'RENT_CREATED');
-  const total = created.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+function renderRentBody(){
+  const body = document.getElementById('schBody');
+  const f = sch.filters.rent;
+  const { rows, total } = sch.paged.rent;
+  const hasMore = rows.length < total;
+  // Created-count/total are only over the rows loaded so far - see the note
+  // in the count label whenever more exist than have been fetched.
+  const created = rows.filter(i => i.action === 'RENT_CREATED');
+  const sum = created.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const countLabel = hasMore
+    ? `First ${rows.length} of ${total} record(s) · ${created.length} bill(s) created so far · ${amountFmt(sum)} — load more for the full total`
+    : `${total} record(s) · ${created.length} bill(s) created · ${amountFmt(sum)}`;
 
   body.innerHTML = `
     <div class="sch-filters">
@@ -292,16 +335,36 @@ async function renderRent(){
       <label>Month <input type="text" placeholder="RENT-2026-09" data-filter="rent.period_key" value="${escapeHtml(f.period_key)}"></label>
       <label>Customer ID <input type="number" placeholder="any" data-filter="rent.user" value="${escapeHtml(f.user)}"></label>
       <button class="btn btn-ghost btn-sm" id="schClearRent">Clear</button>
-      <span class="sch-count">${data.total} record(s) · ${created.length} bill(s) created · ${amountFmt(total)}</span>
+      <span class="sch-count">${countLabel}</span>
     </div>
-    ${data.items.length ? data.items.map(itemRow).join('')
-                        : emptyState('Nothing recorded yet. Rent activity appears here after the rent script runs.')}`;
+    ${rows.length ? rows.map(itemRow).join('')
+                  : emptyState('Nothing recorded yet. Rent activity appears here after the rent script runs.')}
+    ${hasMore ? `<div class="sch-load-more" style="text-align:center; margin-top:14px;"><button class="btn btn-ghost btn-sm" id="schLoadMoreRent">Load ${Math.min(ITEMS_PAGE_SIZE, total - rows.length)} more (${total - rows.length} remaining)</button></div>` : ''}`;
 
   wireFilters();
   document.getElementById('schClearRent').addEventListener('click', () => {
     sch.filters.rent = { action: '', period_key: '', user: '' };
     renderTab('rent');
   });
+  document.getElementById('schLoadMoreRent')?.addEventListener('click', () =>
+    loadMoreRent().catch(e => showToast(e.message, 'error')));
+}
+
+async function loadMoreRent(){
+  const btn = document.getElementById('schLoadMoreRent');
+  if (btn){ btn.disabled = true; btn.textContent = 'Loading…'; }
+  const f = sch.filters.rent;
+  const data = await api('/api/scheduler/items' + qs({
+    scheduler: 'auto_rent_generation',
+    action: f.action,
+    period_key: f.period_key,
+    user_id: f.user,
+    limit: ITEMS_PAGE_SIZE,
+    offset: sch.paged.rent.rows.length,
+  }));
+  sch.paged.rent.rows.push(...data.items);
+  sch.paged.rent.total = data.total;
+  renderRentBody();
 }
 
 
@@ -310,17 +373,28 @@ async function renderRent(){
    ══════════════════════════════════════════════════════════════ */
 
 async function renderPenalty(){
-  const body = document.getElementById('schBody');
   const f = sch.filters.penalty;
   const data = await api('/api/scheduler/items' + qs({
     scheduler: 'due_bill_penalty',
     action: f.action,
     user_id: f.user,
-    limit: 200,
+    limit: ITEMS_PAGE_SIZE,
+    offset: 0,
   }));
+  sch.paged.penalty = { rows: data.items.slice(), total: data.total };
+  renderPenaltyBody();
+}
 
-  const applied = data.items.filter(i => i.action === 'PENALTY_APPLIED');
-  const total = applied.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+function renderPenaltyBody(){
+  const body = document.getElementById('schBody');
+  const f = sch.filters.penalty;
+  const { rows, total } = sch.paged.penalty;
+  const hasMore = rows.length < total;
+  const applied = rows.filter(i => i.action === 'PENALTY_APPLIED');
+  const sum = applied.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const countLabel = hasMore
+    ? `First ${rows.length} of ${total} record(s) · ${amountFmt(sum)} charged so far — load more for the full total`
+    : `${total} record(s) · ${amountFmt(sum)} charged`;
 
   body.innerHTML = `
     <div class="sch-filters">
@@ -333,21 +407,40 @@ async function renderPenalty(){
       </label>
       <label>Customer ID <input type="number" placeholder="any" data-filter="penalty.user" value="${escapeHtml(f.user)}"></label>
       <button class="btn btn-ghost btn-sm" id="schClearPenalty">Clear</button>
-      <span class="sch-count">${data.total} record(s) · ${amountFmt(total)} charged</span>
+      <span class="sch-count">${countLabel}</span>
     </div>
     <div class="sch-note">
       Every row carries the arithmetic as it stood on the night it was applied —
       the rate, the grace period and the day count that produced the figure.
       Changing the rate later does not rewrite what a tenant was already charged.
     </div>
-    ${data.items.length ? data.items.map(itemRow).join('')
-                        : emptyState('No penalties recorded. If the penalty scheduler is switched off in Settings, nothing is charged.')}`;
+    ${rows.length ? rows.map(itemRow).join('')
+                  : emptyState('No penalties recorded. If the penalty scheduler is switched off in Settings, nothing is charged.')}
+    ${hasMore ? `<div class="sch-load-more" style="text-align:center; margin-top:14px;"><button class="btn btn-ghost btn-sm" id="schLoadMorePenalty">Load ${Math.min(ITEMS_PAGE_SIZE, total - rows.length)} more (${total - rows.length} remaining)</button></div>` : ''}`;
 
   wireFilters();
   document.getElementById('schClearPenalty').addEventListener('click', () => {
     sch.filters.penalty = { action: '', user: '' };
     renderTab('penalty');
   });
+  document.getElementById('schLoadMorePenalty')?.addEventListener('click', () =>
+    loadMorePenalty().catch(e => showToast(e.message, 'error')));
+}
+
+async function loadMorePenalty(){
+  const btn = document.getElementById('schLoadMorePenalty');
+  if (btn){ btn.disabled = true; btn.textContent = 'Loading…'; }
+  const f = sch.filters.penalty;
+  const data = await api('/api/scheduler/items' + qs({
+    scheduler: 'due_bill_penalty',
+    action: f.action,
+    user_id: f.user,
+    limit: ITEMS_PAGE_SIZE,
+    offset: sch.paged.penalty.rows.length,
+  }));
+  sch.paged.penalty.rows.push(...data.items);
+  sch.paged.penalty.total = data.total;
+  renderPenaltyBody();
 }
 
 

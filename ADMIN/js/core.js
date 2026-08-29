@@ -19,8 +19,9 @@ const state = {
   role: localStorage.getItem('tms_role') || null,
   currentUser: null,
   view: 'dashboard',
-  cache: { complexes: [], shops: [], users: [], bills: [], payments: [] },
-  loaded: { complexes:false, shops:false, users:false, bills:false, payments:false },
+  cache: { complexes: [], shops: [], users: [], bills: [], payments: [], meters: [], metersAssigned: [], deposits: [] },
+  loaded: { complexes:false, shops:false, users:false, bills:false, payments:false, meters:false, metersAssigned:false, deposits:false },
+  tableSearch: {},  // { [viewName]: lastSearchText } — see attachSearchFilter() in nav.js
   billing: {
     section: 'view', // 'add' | 'manage' | 'view' — the three Finance section tabs
     manageTab: 'bills', // 'bills' | 'payments' — sub-tab within Manage
@@ -29,6 +30,14 @@ const state = {
     nav: { mode: 'tenant', complexId: null, userId: null, year: null, month: null, tab: 'bills', duesStatus: 'all' },
     sort: 'newest',
     paymentSort: 'newest',
+    // Manage Bills/Payments can match thousands of rows once filtered - all
+    // matching rows are still fetched (needed for the Dues/Browse tabs'
+    // cross-bill totals), but only this many are put in the DOM at once.
+    // Reset to BILLING_PAGE_SIZE whenever the filter/sort/search/tab changes
+    // (a new result set should start collapsed), left alone across a
+    // "Show more" click or a background refresh after a save.
+    visibleBillCount: 100,
+    visiblePaymentCount: 100,
   },
   deposits: {
     mode: 'tenant', // 'tenant' | 'property' | 'all'

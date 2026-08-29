@@ -32,7 +32,12 @@ async function submetersView(){
    LIST
    ================================================================ */
 async function submeterListHtml(){
-  const meters = await api('/api/meters');
+  // Cached like complexes/shops/users/bills - this is always the same
+  // unfiltered call (filtering happens client-side below), so re-fetching
+  // it from the server on every filter-chip click was pure waste. Cleared
+  // by invalidateMetersCache() wherever a meter is created/edited/deleted/
+  // (un)assigned.
+  const meters = await ensureLoaded('meters', '/api/meters');
   submeterState._meters = meters;
   const complexes = state.cache.complexes || [];
 
@@ -337,6 +342,7 @@ function openSubmeterModal(existing, presetShopId){
     await withSavingState('saveBtn', async () => {
       if (isEdit) await api(`/api/meters/${existing.id}`, { method:'PUT', body });
       else await api('/api/meters', { method:'POST', body });
+      invalidateMetersCache();
       closeModal();
       showToast(isEdit ? 'Submeter updated' : 'Submeter added', 'success');
       // Re-render whichever screen we were called from (this modal is also
@@ -376,6 +382,7 @@ function openAssignSubmeterModal(meterId){
     if (!shopId){ showFieldError('smAssignErr','Choose a shop'); return; }
     await withSavingState('assignBtn', async () => {
       const res = await api(`/api/meters/${meterId}/assign-shop`, { method:'POST', body:{ shop_id: shopId } });
+      invalidateMetersCache();
       closeModal();
       showToast(res.message, 'success');
       await renderView('submeters');
@@ -399,6 +406,7 @@ function confirmUnassignSubmeter(meterId){
   document.getElementById('confirmBtn').addEventListener('click', async () => {
     await withSavingState('confirmBtn', async () => {
       const res = await api(`/api/meters/${meterId}/unassign`, { method:'POST' });
+      invalidateMetersCache();
       closeModal();
       showToast(res.message, 'success');
       await renderView('submeters');
@@ -423,6 +431,7 @@ function confirmDeleteSubmeter(id, name){
   document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
     await withSavingState('confirmDeleteBtn', async () => {
       await api(`/api/meters/${id}`, { method:'DELETE' });
+      invalidateMetersCache();
       closeModal();
       showToast('Submeter deleted', 'success');
       submeterState.view = 'list';
